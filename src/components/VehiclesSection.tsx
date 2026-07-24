@@ -37,6 +37,7 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
   const [model, setModel] = useState('');
   const [brand, setBrand] = useState('');
   const [maxPassengers, setMaxPassengers] = useState(4);
+  const [vagasAcamados, setVagasAcamados] = useState(1);
 
   const isAuthorized = userProfile === 'Administrador' || userProfile === 'Coordenador';
 
@@ -73,7 +74,7 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
     setError(null);
     setSuccess(null);
 
-    if (!plate || !model || !brand || maxPassengers <= 0) {
+    if (!plate || !model || !brand || maxPassengers <= 0 || (type === 'Ambulância' && vagasAcamados <= 0)) {
       setError('Favor preencher todos os campos do veículo com valores válidos.');
       return;
     }
@@ -90,7 +91,8 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
           plate: plate.toUpperCase().trim(),
           model: model.trim(),
           brand: brand.trim(),
-          maxPassengers
+          maxPassengers,
+          vagasAcamados: type === 'Ambulância' ? vagasAcamados : undefined
         })
       });
 
@@ -106,6 +108,7 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
       setModel('');
       setBrand('');
       setMaxPassengers(type === 'Carro de pequeno porte' ? 4 : type === 'Carro de grande porte' ? 15 : 2);
+      setVagasAcamados(1);
 
       fetchVehicles();
     } catch (e: any) {
@@ -117,7 +120,10 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
     setType(newType);
     if (newType === 'Carro de pequeno porte') setMaxPassengers(4);
     else if (newType === 'Carro de grande porte') setMaxPassengers(15);
-    else if (newType === 'Ambulância') setMaxPassengers(2);
+    else if (newType === 'Ambulância') {
+      setMaxPassengers(2);
+      setVagasAcamados(1);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -259,10 +265,10 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
                   />
                 </div>
 
-                {/* Max Passsengers */}
+                {/* Max Passengers */}
                 <div>
                   <label htmlFor="veh-capacity" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Quantidade Máxima de Passageiros (Vagas)
+                    Quantidade Máxima de Passageiros (Vagas Gerais)
                   </label>
                   <input
                     id="veh-capacity"
@@ -275,6 +281,26 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
                     className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   />
                 </div>
+
+                {/* Vagas para Acamados (Ambulâncias) */}
+                {type === 'Ambulância' && (
+                  <div className="bg-rose-50/70 p-3.5 rounded-2xl border border-rose-200 space-y-1.5 animate-fadeIn">
+                    <label htmlFor="veh-bedridden-capacity" className="block text-xs font-extrabold text-rose-900 uppercase tracking-wider">
+                      Vagas na Ambulância para Pacientes Acamados (Macas/Leitos)
+                    </label>
+                    <p className="text-[10px] text-rose-700 font-medium">Informe quantas macas/leitos de acamados esta ambulância suporta simultaneamente.</p>
+                    <input
+                      id="veh-bedridden-capacity"
+                      type="number"
+                      required
+                      min={1}
+                      max={10}
+                      value={vagasAcamados}
+                      onChange={(e) => setVagasAcamados(Number(e.target.value))}
+                      className="block w-full px-3.5 py-2.5 bg-white border border-rose-300 rounded-xl text-slate-950 font-bold focus:outline-none focus:ring-2 focus:ring-rose-500 text-sm"
+                    />
+                  </div>
+                )}
 
                 <button
                   id="veh-submit"
@@ -338,9 +364,17 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
                       </div>
                     </div>
 
-                    <div className="flex items-center text-slate-600 text-xs gap-3 font-medium bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                      <Users2 className="h-4 w-4 text-blue-500" />
-                      <span>Capacidade Máxima: <strong>{v.maxPassengers} passageiros</strong></span>
+                    <div className="space-y-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                      <div className="flex items-center text-slate-600 text-xs gap-2 font-medium">
+                        <Users2 className="h-4 w-4 text-blue-500 shrink-0" />
+                        <span>Capacidade Geral: <strong>{v.maxPassengers} passageiro(s)</strong></span>
+                      </div>
+                      {v.type === 'Ambulância' && (
+                        <div className="flex items-center text-rose-800 text-xs gap-2 font-bold bg-rose-50 p-2 rounded-lg border border-rose-200">
+                          <span className="text-base">🛏️</span>
+                          <span>Vagas para Acamados: <strong>{v.vagasAcamados ?? 1} maca(s)/leito(s)</strong></span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

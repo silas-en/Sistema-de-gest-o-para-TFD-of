@@ -19,7 +19,7 @@ async function startServer() {
   await DatabaseManager.init();
 
   const app = express();
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '50mb' }));
 
   // Middleware to authenticate user via 'x-user-id' header
   const getRequestUser = (req: express.Request): DbUser | null => {
@@ -241,7 +241,7 @@ async function startServer() {
       return res.status(403).json({ error: 'Permissão negada para cadastrar veículos' });
     }
 
-    const { type, plate, model, brand, maxPassengers } = req.body;
+    const { type, plate, model, brand, maxPassengers, vagasAcamados } = req.body;
     if (!type || !plate || !model || !brand || !maxPassengers) {
       return res.status(400).json({ error: 'Todos os campos são obrigatórios para o cadastro de veículos' });
     }
@@ -252,7 +252,8 @@ async function startServer() {
       plate,
       model,
       brand,
-      maxPassengers: Number(maxPassengers)
+      maxPassengers: Number(maxPassengers),
+      vagasAcamados: type === 'Ambulância' ? (Number(vagasAcamados) || 1) : undefined
     };
 
     DatabaseManager.saveVehicle(newVehicle);
@@ -387,7 +388,65 @@ async function startServer() {
       const sStart = new Date(s.startDate);
       const sEnd = new Date(s.endDate);
 
+      const seats = (s.companionName && s.companionName.trim().length > 0) ? 2 : 1;
+
       // Add occupancy to overlapping days
+      for (const dateYMD in occupancy) {
+        const dObj = new Date(dateYMD);
+        if (dObj >= sStart && dObj <= sEnd) {
+          const tripType = s.tripType || (s.startDate === s.endDate ? 'ida_e_volta' : 'legacy');
+          
+          if (tripType === 'apenas_ida') {
+            if (s.vehicleId === vehicleId) {
+              occupancy[dateYMD] += seats;
+            }
+          } else if (tripType === 'apenas_retorno') {
+            const actualRetVeh = s.returnVehicleId || s.vehicleId;
+            if (actualRetVeh === vehicleId) {
+              occupancy[dateYMD] += seats;
+            }
+          } else if (tripType === 'ida_e_volta') {
+            if (s.vehicleId === vehicleId) {
+              occupancy[dateYMD] += seats;
+            } else if (s.returnVehicleId && s.returnVehicleId === vehicleId) {
+              occupancy[dateYMD] += seats;
+            }
+          } else {
+            const isReturnDate = dateYMD === s.endDate;
+            const assignedVehicleId = isReturnDate ? (s.returnVehicleId || s.vehicleId) : s.vehicleId;
+            
+            if (assignedVehicleId === vehicleId) {
+              occupancy[dateYMD] += seats;
+            }
+          }
+        }
+      }
+    }
+
+    return occupancy;
+  };
+
+  // Helper function to check bedridden occupancy map for ambulances
+  const getBedriddenOccupancyOnDates = (vehicleId: string, startDate: string, endDate: string, excludeScheduleId?: string): { [dateStr: string]: number } => {
+    const schedules = DatabaseManager.getSchedules();
+    const startObj = new Date(startDate);
+    const endObj = new Date(endDate);
+    
+    const occupancy: { [dateStr: string]: number } = {};
+    const curr = new Date(startObj);
+    while (curr <= endObj) {
+      const isoYMD = curr.toISOString().split('T')[0];
+      occupancy[isoYMD] = 0;
+      curr.setDate(curr.getDate() + 1);
+    }
+
+    for (const s of schedules) {
+      if (excludeScheduleId && s.id === excludeScheduleId) continue;
+      if (!s.isBedridden) continue;
+
+      const sStart = new Date(s.startDate);
+      const sEnd = new Date(s.endDate);
+
       for (const dateYMD in occupancy) {
         const dObj = new Date(dateYMD);
         if (dObj >= sStart && dObj <= sEnd) {
@@ -564,7 +623,7 @@ async function startServer() {
     const user = getRequestUser(req);
     if (!user) return res.status(401).json({ error: 'Não autorizado' });
 
-    const { patientName, startDate, endDate, tripType, vehicleId, returnVehicleId, driverId, returnDriverId, hospitalId, requestType, recurrentTypeDetails, companionName, companionPhone1, companionPhone2 } = req.body;
+    const { patientName, startDate, endDate, tripType, vehicleId, returnVehicleId, driverId, returnDriverId, hospitalId, requestType, recurrentTypeDetails, companionName, companionPhone1, companionPhone2, isBedridden } = req.body;
     
     if (!patientName || !startDate || !endDate || !vehicleId || !hospitalId || !requestType) {
       return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos' });
@@ -582,10 +641,50 @@ async function startServer() {
       return res.status(404).json({ error: 'Veículo de volta não encontrado' });
     }
 
+    // Bedridden checks
+    if (isBedridden) {
+      if (vehicle.type !== 'Ambulância') {
+        return res.status(400).json({ error: 'Apenas ambulâncias possuem suporte para transporte de pacientes acamados. Por favor, selecione uma ambulância como veículo de ida.' });
+      }
+      if (finalReturnVehicleId !== vehicleId && returnVehicle.type !== 'Ambulância') {
+        return res.status(400).json({ error: 'O veículo de volta selecionado deve ser uma ambulância para transportar paciente acamado.' });
+      }
+
+      const bedriddenOccupancy = getBedriddenOccupancyOnDates(vehicleId, startDate, endDate);
+      const fullBedriddenDates: string[] = [];
+      for (const dStr in bedriddenOccupancy) {
+        if (finalReturnVehicleId !== vehicleId && dStr === endDate) continue;
+        const limit = vehicle.vagasAcamados || 1;
+        if (bedriddenOccupancy[dStr] >= limit) {
+          fullBedriddenDates.push(dStr);
+        }
+      }
+      if (fullBedriddenDates.length > 0) {
+        return res.status(400).json({
+          error: `A ambulância selecionada (${vehicle.model}) já atingiu a capacidade máxima de vagas para pacientes acamados (${vehicle.vagasAcamados || 1} leito(s)) em algumas das datas!`,
+          datesFull: fullBedriddenDates
+        });
+      }
+
+      if (finalReturnVehicleId !== vehicleId) {
+        const returnBedriddenOcc = getBedriddenOccupancyOnDates(finalReturnVehicleId, endDate, endDate);
+        const returnLimit = returnVehicle.vagasAcamados || 1;
+        if ((returnBedriddenOcc[endDate] || 0) >= returnLimit) {
+          return res.status(400).json({
+            error: `A ambulância de retorno (${returnVehicle.model}) já atingiu a capacidade máxima de vagas para acamados (${returnLimit} leito(s)) na data de volta!`,
+            datesFull: [endDate]
+          });
+        }
+      }
+    }
+
     // Validate dates range validity
     if (new Date(startDate) > new Date(endDate)) {
       return res.status(400).json({ error: 'A data de ida não pode ser posterior à data de volta' });
     }
+
+    // Calculate seats needed for this request (patient + companion if present)
+    const seatsNeeded = (companionName && companionName.trim().length > 0) ? 2 : 1;
 
     // Check outbound vehicle occupancy (on its active days)
     const outboundOccupancy = getOccupancyOnDates(vehicleId, startDate, endDate);
@@ -595,14 +694,14 @@ async function startServer() {
       if (finalReturnVehicleId !== vehicleId && dStr === endDate) continue;
       
       const booked = outboundOccupancy[dStr];
-      if (booked >= vehicle.maxPassengers) {
+      if (booked + seatsNeeded > vehicle.maxPassengers) {
         outboundFullDates.push(dStr);
       }
     }
 
     if (outboundFullDates.length > 0) {
       return res.status(400).json({ 
-        error: `O veículo de ida (${vehicle.model}) já está lotado em algumas das datas selecionadas!`,
+        error: `O veículo de ida (${vehicle.model}) não possui vagas suficientes (${seatsNeeded} vaga(s) requerida(s) para paciente${seatsNeeded === 2 ? ' e acompanhante' : ''}) em algumas das datas selecionadas!`,
         datesFull: outboundFullDates
       });
     }
@@ -611,9 +710,9 @@ async function startServer() {
     if (finalReturnVehicleId !== vehicleId) {
       const returnOccupancy = getOccupancyOnDates(finalReturnVehicleId, endDate, endDate);
       const bookedReturn = returnOccupancy[endDate] || 0;
-      if (bookedReturn >= returnVehicle.maxPassengers) {
+      if (bookedReturn + seatsNeeded > returnVehicle.maxPassengers) {
         return res.status(400).json({
-          error: `O veículo de volta (${returnVehicle.model}) já está lotado na data de volta (${endDate.split('-').reverse().join('/')})!`,
+          error: `O veículo de volta (${returnVehicle.model}) não possui vagas suficientes (${seatsNeeded} vaga(s) requerida(s)) na data de volta (${endDate.split('-').reverse().join('/')})!`,
           datesFull: [endDate]
         });
       }
@@ -637,7 +736,8 @@ async function startServer() {
       createdAt: new Date().toISOString(),
       companionName: companionName || undefined,
       companionPhone1: companionPhone1 || undefined,
-      companionPhone2: companionPhone2 || undefined
+      companionPhone2: companionPhone2 || undefined,
+      isBedridden: Boolean(isBedridden)
     };
 
     DatabaseManager.saveSchedule(newSchedule);
@@ -660,7 +760,7 @@ async function startServer() {
       return res.status(403).json({ error: 'Permissão negada. Apenas quem criou este agendamento ou um Administrador pode alterá-lo.' });
     }
 
-    const { patientName, startDate, endDate, tripType, vehicleId, returnVehicleId, driverId, returnDriverId, hospitalId, requestType, recurrentTypeDetails, companionName, companionPhone1, companionPhone2 } = req.body;
+    const { patientName, startDate, endDate, tripType, vehicleId, returnVehicleId, driverId, returnDriverId, hospitalId, requestType, recurrentTypeDetails, companionName, companionPhone1, companionPhone2, isBedridden } = req.body;
     
     if (!patientName || !startDate || !endDate || !vehicleId || !hospitalId || !requestType) {
       return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos' });
@@ -678,20 +778,61 @@ async function startServer() {
       return res.status(404).json({ error: 'Veículo de volta não cadastrado' });
     }
 
+    // Bedridden checks
+    if (isBedridden) {
+      if (vehicle.type !== 'Ambulância') {
+        return res.status(400).json({ error: 'Apenas ambulâncias possuem suporte para transporte de pacientes acamados. Por favor, selecione uma ambulância como veículo de ida.' });
+      }
+      if (finalReturnVehicleId !== vehicleId && returnVehicle.type !== 'Ambulância') {
+        return res.status(400).json({ error: 'O veículo de volta selecionado deve ser uma ambulância para transportar paciente acamado.' });
+      }
+
+      const bedriddenOccupancy = getBedriddenOccupancyOnDates(vehicleId, startDate, endDate, schedId);
+      const fullBedriddenDates: string[] = [];
+      for (const dStr in bedriddenOccupancy) {
+        if (finalReturnVehicleId !== vehicleId && dStr === endDate) continue;
+        const limit = vehicle.vagasAcamados || 1;
+        if (bedriddenOccupancy[dStr] >= limit) {
+          fullBedriddenDates.push(dStr);
+        }
+      }
+      if (fullBedriddenDates.length > 0) {
+        return res.status(400).json({
+          error: `A ambulância selecionada (${vehicle.model}) já atingiu a capacidade máxima de vagas para pacientes acamados (${vehicle.vagasAcamados || 1} leito(s)) em algumas das datas!`,
+          datesFull: fullBedriddenDates
+        });
+      }
+
+      if (finalReturnVehicleId !== vehicleId) {
+        const returnBedriddenOcc = getBedriddenOccupancyOnDates(finalReturnVehicleId, endDate, endDate, schedId);
+        const returnLimit = returnVehicle.vagasAcamados || 1;
+        if ((returnBedriddenOcc[endDate] || 0) >= returnLimit) {
+          return res.status(400).json({
+            error: `A ambulância de retorno (${returnVehicle.model}) já atingiu a capacidade máxima de vagas para acamados (${returnLimit} leito(s)) na data de volta!`,
+            datesFull: [endDate]
+          });
+        }
+      }
+    }
+
+    // Calculate seats needed for this request (patient + companion if present)
+    const seatsNeeded = (companionName && companionName.trim().length > 0) ? 2 : 1;
+
     // Check outbound vehicle occupancy, exclude this scheduling
     const outboundOccupancy = getOccupancyOnDates(vehicleId, startDate, endDate, schedId);
     const outboundFullDates: string[] = [];
     for (const dStr in outboundOccupancy) {
       if (finalReturnVehicleId !== vehicleId && dStr === endDate) continue;
       
-      if (outboundOccupancy[dStr] >= vehicle.maxPassengers) {
+      const booked = outboundOccupancy[dStr];
+      if (booked + seatsNeeded > vehicle.maxPassengers) {
         outboundFullDates.push(dStr);
       }
     }
 
     if (outboundFullDates.length > 0) {
       return res.status(400).json({ 
-        error: `O veículo de ida (${vehicle.model}) já está lotado em algumas das datas especificadas!`,
+        error: `O veículo de ida (${vehicle.model}) não possui vagas suficientes (${seatsNeeded} vaga(s) requerida(s)) em algumas das datas especificadas!`,
         datesFull: outboundFullDates
       });
     }
@@ -700,9 +841,9 @@ async function startServer() {
     if (finalReturnVehicleId !== vehicleId) {
       const returnOccupancy = getOccupancyOnDates(finalReturnVehicleId, endDate, endDate, schedId);
       const bookedReturn = returnOccupancy[endDate] || 0;
-      if (bookedReturn >= returnVehicle.maxPassengers) {
+      if (bookedReturn + seatsNeeded > returnVehicle.maxPassengers) {
         return res.status(400).json({
-          error: `O veículo de volta (${returnVehicle.model}) já está lotado na data de volta (${endDate.split('-').reverse().join('/')})!`,
+          error: `O veículo de volta (${returnVehicle.model}) não possui vagas suficientes (${seatsNeeded} vaga(s) requerida(s)) na data de volta (${endDate.split('-').reverse().join('/')})!`,
           datesFull: [endDate]
         });
       }
@@ -723,6 +864,7 @@ async function startServer() {
     existingSched.companionName = companionName || undefined;
     existingSched.companionPhone1 = companionPhone1 || undefined;
     existingSched.companionPhone2 = companionPhone2 || undefined;
+    existingSched.isBedridden = Boolean(isBedridden);
     
     DatabaseManager.saveSchedule(existingSched);
     res.json(existingSched);
@@ -879,7 +1021,11 @@ async function startServer() {
 
     const chk = req.body;
     if (!chk.vehicleId || !chk.vehicleModelPlate || !chk.date || chk.initialKm === undefined || chk.finalKm === undefined) {
-      return res.status(400).json({ error: 'Dados obrigatórios do checklist ausentes' });
+      return res.status(400).json({ error: 'Dados obrigatórios do checklist ausentes (Quilometragem/Veículo/Data).' });
+    }
+
+    if (!chk.fotoFrente || !chk.fotoFundo || !chk.fotoLateralEsquerda || !chk.fotoLateralDireita) {
+      return res.status(400).json({ error: 'É obrigatório enviar todas as 4 fotos do veículo (Frente, Fundo, Lateral Esquerda e Lateral Direita).' });
     }
 
     const newChecklist: VehicleChecklist = {
@@ -907,6 +1053,10 @@ async function startServer() {
       saidaHorario: chk.saidaHorario || '',
       saidaDestino: chk.saidaDestino || '',
       saidaCidade: chk.saidaCidade || '',
+      fotoFrente: chk.fotoFrente || '',
+      fotoFundo: chk.fotoFundo || '',
+      fotoLateralEsquerda: chk.fotoLateralEsquerda || '',
+      fotoLateralDireita: chk.fotoLateralDireita || '',
       driverUserId: user.id,
       driverUserName: user.name,
       createdAt: new Date().toISOString()

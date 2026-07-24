@@ -25,6 +25,7 @@ export interface Vehicle {
   model: string;
   brand: string;
   maxPassengers: number;
+  vagasAcamados?: number;
 }
 
 export interface Driver {
@@ -64,6 +65,7 @@ export interface Schedule {
   companionName?: string;
   companionPhone1?: string;
   companionPhone2?: string;
+  isBedridden?: boolean;
   isDeletionPending?: boolean;
   deletionRequestedAt?: string;
   deletionRequestedByUserId?: string;
@@ -117,6 +119,10 @@ export interface VehicleChecklist {
   saidaHorario: string;
   saidaDestino: string;
   saidaCidade: string;
+  fotoFrente?: string;
+  fotoFundo?: string;
+  fotoLateralEsquerda?: string;
+  fotoLateralDireita?: string;
   driverUserId: string;
   driverUserName: string;
   createdAt: string;

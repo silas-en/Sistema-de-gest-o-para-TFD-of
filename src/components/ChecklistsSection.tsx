@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { ClipboardList, Search, Trash2, Calendar, FileText, CheckCircle2, AlertCircle, Printer, X, Eye, ChevronDown, ChevronUp } from 'lucide-react';
+import { ClipboardList, Search, Trash2, Calendar, FileText, CheckCircle2, AlertCircle, Printer, X, Eye, ChevronDown, ChevronUp, Camera, Maximize2, Users, Filter, RotateCcw } from 'lucide-react';
 import { VehicleChecklist, UserProfile } from '../types.js';
 import ConfirmDialog from './ConfirmDialog.js';
 
@@ -20,8 +20,10 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [selectedDriver, setSelectedDriver] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [printingChecklist, setPrintingChecklist] = useState<VehicleChecklist | null>(null);
+  const [selectedPhotoZoom, setSelectedPhotoZoom] = useState<{ title: string; url: string } | null>(null);
 
   const [confirmConfig, setConfirmConfig] = useState<{
     isOpen: boolean;
@@ -47,8 +49,19 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
       if (!response.ok) {
         throw new Error('Falha ao buscar checklists');
       }
-      const data = await response.json();
-      setChecklists(data.sort((a: VehicleChecklist, b: VehicleChecklist) => b.createdAt.localeCompare(a.createdAt)));
+      const data: VehicleChecklist[] = await response.json();
+      
+      // Organizar e ordenar os checklists estritamente por DATA (mais recente primeiro)
+      const sorted = data.sort((a, b) => {
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateA !== dateB) {
+          return dateB.localeCompare(dateA); // Ordem decrescente de data
+        }
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      });
+
+      setChecklists(sorted);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -93,8 +106,15 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
     }, 300);
   };
 
-  const uniqueVehicles = Array.from(new Set(checklists.map(c => c.vehicleModelPlate)));
-  const uniqueDrivers = Array.from(new Set(checklists.map(c => c.driverUserName)));
+  const clearFilters = () => {
+    setSearchTerm('');
+    setSelectedVehicle('');
+    setSelectedDriver('');
+    setSelectedDate('');
+  };
+
+  const uniqueVehicles = Array.from(new Set(checklists.map(c => c.vehicleModelPlate))).filter(Boolean);
+  const uniqueDrivers = Array.from(new Set(checklists.map(c => c.driverUserName))).filter(Boolean);
 
   const filteredChecklists = checklists.filter(chk => {
     const matchesSearch = 
@@ -105,9 +125,12 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
 
     const matchesVehicle = selectedVehicle ? chk.vehicleModelPlate === selectedVehicle : true;
     const matchesDriver = selectedDriver ? chk.driverUserName === selectedDriver : true;
+    const matchesDate = selectedDate ? chk.date === selectedDate : true;
 
-    return matchesSearch && matchesVehicle && matchesDriver;
+    return matchesSearch && matchesVehicle && matchesDriver && matchesDate;
   });
+
+  const isAnyFilterActive = Boolean(searchTerm || selectedVehicle || selectedDriver || selectedDate);
 
   if (loading) {
     return (
@@ -121,16 +144,27 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
   return (
     <div className="space-y-6" id="checklists-section-dashboard">
       
-      {/* Header */}
+      {/* Header com destaque de Área Compartilhada */}
       <div className="border-b border-slate-200 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
+          <div className="flex items-center space-x-2 mb-1.5">
+            <span className="text-xxs font-extrabold uppercase px-2.5 py-1 bg-blue-100 text-blue-800 rounded-lg tracking-wider border border-blue-200 flex items-center space-x-1.5 shadow-xs">
+              <Users className="h-3.5 w-3.5 text-blue-700" />
+              <span>Área Compartilhada • Administração e Coordenação</span>
+            </span>
+          </div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center">
             <ClipboardList className="h-5 w-5 mr-2 text-blue-600" />
-            Checklists de Veículos Enviados
+            Checklists dos Motoristas (Organizados por Data)
           </h2>
           <p className="text-sm text-slate-500">
-            Acompanhe o estado de conservação, quilometragem e segurança das ambulâncias e carros relatados pelos motoristas.
+            Acesso compartilhado entre Administradores e Coordenadores a todos os checklists enviados pelos motoristas, ordenados por data.
           </p>
+        </div>
+
+        <div className="bg-slate-100/80 px-3.5 py-2 rounded-xl border border-slate-200/80 text-xs text-slate-600 font-semibold flex items-center space-x-2 shrink-0">
+          <Calendar className="h-4 w-4 text-blue-600" />
+          <span>{filteredChecklists.length} checklist(s) exibido(s)</span>
         </div>
       </div>
 
@@ -141,42 +175,89 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
       )}
 
       {/* Filters Row */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Pesquisar por motorista, veículo, destino..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-          />
+      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+        <div className="flex items-center justify-between text-xs font-bold text-slate-700 pb-1 border-b border-slate-100">
+          <div className="flex items-center space-x-1.5">
+            <Filter className="h-3.5 w-3.5 text-blue-600" />
+            <span>Filtros de Pesquisa e Período</span>
+          </div>
+          {isAnyFilterActive && (
+            <button
+              onClick={clearFilters}
+              className="text-xxs font-bold text-blue-600 hover:text-blue-800 flex items-center space-x-1 hover:underline cursor-pointer"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Limpar Filtros</span>
+            </button>
+          )}
         </div>
 
-        <div className="w-full md:w-56">
-          <select
-            value={selectedVehicle}
-            onChange={(e) => setSelectedVehicle(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-          >
-            <option value="">Todos os Veículos</option>
-            {uniqueVehicles.map(v => (
-              <option key={v} value={v}>{v}</option>
-            ))}
-          </select>
-        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Filtro por Data */}
+          <div className="relative">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Filtro de Data
+            </label>
+            <div className="relative">
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              />
+            </div>
+          </div>
 
-        <div className="w-full md:w-56">
-          <select
-            value={selectedDriver}
-            onChange={(e) => setSelectedDriver(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-          >
-            <option value="">Todos os Motoristas</option>
-            {uniqueDrivers.map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
+          {/* Filtro por Motorista */}
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Filtro de Motorista
+            </label>
+            <select
+              value={selectedDriver}
+              onChange={(e) => setSelectedDriver(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+            >
+              <option value="">Todos os Motoristas</option>
+              {uniqueDrivers.map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filtro por Veículo */}
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Filtro de Veículo
+            </label>
+            <select
+              value={selectedVehicle}
+              onChange={(e) => setSelectedVehicle(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+            >
+              <option value="">Todos os Veículos</option>
+              {uniqueVehicles.map(v => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Busca Geral */}
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Busca por Texto
+            </label>
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Destino, cidade..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -367,6 +448,51 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
                       </div>
                     </div>
 
+                    {/* Photos Section */}
+                    {(chk.fotoFrente || chk.fotoFundo || chk.fotoLateralEsquerda || chk.fotoLateralDireita) ? (
+                      <div className="bg-white p-5 rounded-xl border border-slate-150 shadow-sm">
+                        <h5 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3 pb-1 border-b flex items-center space-x-2">
+                          <Camera className="h-4 w-4 text-emerald-600" />
+                          <span>Registros Fotográficos do Veículo (4 Ângulos)</span>
+                        </h5>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {[
+                            { title: 'Frente', url: chk.fotoFrente },
+                            { title: 'Fundo / Traseira', url: chk.fotoFundo },
+                            { title: 'Lateral Esquerda', url: chk.fotoLateralEsquerda },
+                            { title: 'Lateral Direita', url: chk.fotoLateralDireita },
+                          ].map((photo, idx) => photo.url ? (
+                            <div 
+                              key={idx}
+                              onClick={() => setSelectedPhotoZoom({ title: `${chk.vehicleModelPlate} - ${photo.title}`, url: photo.url! })}
+                              className="group relative rounded-xl overflow-hidden border border-slate-200 aspect-video bg-slate-900 cursor-pointer hover:border-emerald-500 shadow-sm transition-all"
+                            >
+                              <img src={photo.url} alt={photo.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                              <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span className="bg-white text-slate-900 text-xxs font-bold px-2.5 py-1 rounded-lg shadow flex items-center space-x-1">
+                                  <Maximize2 className="h-3 w-3" />
+                                  <span>Ver Foto</span>
+                                </span>
+                              </div>
+                              <span className="absolute bottom-0 inset-x-0 bg-black/70 text-white text-[10px] font-bold text-center py-1 truncate">
+                                {photo.title}
+                              </span>
+                            </div>
+                          ) : (
+                            <div key={idx} className="border border-dashed border-slate-200 rounded-xl aspect-video flex flex-col items-center justify-center p-2 text-center bg-slate-50">
+                              <Camera className="h-5 w-5 text-slate-300 mb-1" />
+                              <span className="text-[10px] font-semibold text-slate-400">{photo.title} não enviada</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-semibold flex items-center space-x-2">
+                        <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
+                        <span>Nenhuma registro fotográfico anexado neste checklist legado.</span>
+                      </div>
+                    )}
+
                   </div>
                 )}
               </div>
@@ -416,10 +542,53 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
             <p><strong>CIDADE:</strong> {printingChecklist.saidaCidade}</p>
           </div>
 
+          {(printingChecklist.fotoFrente || printingChecklist.fotoFundo || printingChecklist.fotoLateralEsquerda || printingChecklist.fotoLateralDireita) && (
+            <div className="pt-4 border-t border-black space-y-2">
+              <p className="font-bold uppercase">REGISTROS FOTOGRÁFICOS ANEXADOS</p>
+              <div className="grid grid-cols-2 gap-4 pt-1">
+                {[
+                  { title: 'Frente', url: printingChecklist.fotoFrente },
+                  { title: 'Fundo / Traseira', url: printingChecklist.fotoFundo },
+                  { title: 'Lateral Esquerda', url: printingChecklist.fotoLateralEsquerda },
+                  { title: 'Lateral Direita', url: printingChecklist.fotoLateralDireita },
+                ].map((p, idx) => p.url ? (
+                  <div key={idx} className="border border-black p-1 text-center">
+                    <img src={p.url} alt={p.title} className="max-h-40 mx-auto object-contain" />
+                    <span className="text-[10px] font-bold uppercase mt-1 block">{p.title}</span>
+                  </div>
+                ) : null)}
+              </div>
+            </div>
+          )}
+
           <div className="pt-8 border-t border-black text-center">
             <p className="border-b border-black w-72 mx-auto mb-1"></p>
             <p className="font-bold">Nome do condutor: {printingChecklist.driverUserName}</p>
             <p className="text-xs">Assinatura do Motorista Credenciado</p>
+          </div>
+        </div>
+      )}
+
+      {/* Zoom Photo Modal */}
+      {selectedPhotoZoom && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn" onClick={() => setSelectedPhotoZoom(null)}>
+          <div className="relative max-w-3xl w-full bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-2xl p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-800 text-white">
+              <h4 className="text-sm font-bold flex items-center space-x-2">
+                <Camera className="h-4 w-4 text-emerald-400" />
+                <span>{selectedPhotoZoom.title}</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setSelectedPhotoZoom(null)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="max-h-[70vh] flex items-center justify-center overflow-hidden rounded-xl bg-black">
+              <img src={selectedPhotoZoom.url} alt={selectedPhotoZoom.title} className="max-h-[70vh] w-auto object-contain" />
+            </div>
           </div>
         </div>
       )}

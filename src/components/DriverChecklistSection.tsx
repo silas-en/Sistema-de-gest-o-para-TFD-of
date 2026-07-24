@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, LogOut, Truck, Clock, MapPin, Compass, CheckSquare, PlusCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, CheckCircle, Calendar, User as UserIcon, Landmark } from 'lucide-react';
+import { ClipboardList, LogOut, Truck, Clock, MapPin, Compass, CheckSquare, PlusCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, CheckCircle, Calendar, User as UserIcon, Landmark, Camera, Maximize2, X, Image as ImageIcon } from 'lucide-react';
 import { User, Vehicle, VehicleChecklist, Schedule, Hospital, Driver } from '../types.js';
 
 interface DriverChecklistSectionProps {
@@ -16,7 +16,10 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [lastSubmittedInfo, setLastSubmittedInfo] = useState<{ vehicle: string; date: string; km: string; destination: string } | null>(null);
   const [expandedChecklistId, setExpandedChecklistId] = useState<string | null>(null);
+  const [driverFilterDate, setDriverFilterDate] = useState('');
 
   // Form states
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
@@ -26,6 +29,13 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
   });
   const [initialKm, setInitialKm] = useState('');
   const [finalKm, setFinalKm] = useState('');
+
+  // Required photos
+  const [fotoFrente, setFotoFrente] = useState<string>('');
+  const [fotoFundo, setFotoFundo] = useState<string>('');
+  const [fotoLateralEsquerda, setFotoLateralEsquerda] = useState<string>('');
+  const [fotoLateralDireita, setFotoLateralDireita] = useState<string>('');
+  const [selectedPhotoZoom, setSelectedPhotoZoom] = useState<{ title: string; url: string } | null>(null);
 
   // Checklist items (true = OK, false = NOT OK)
   const [oleo, setOleo] = useState(true);
@@ -140,6 +150,50 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
     loadData();
   }, [currentUser]);
 
+  const handlePhotoUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: (val: string) => void
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 1200;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_DIM) {
+            height *= MAX_DIM / width;
+            width = MAX_DIM;
+          }
+        } else {
+          if (height > MAX_DIM) {
+            width *= MAX_DIM / height;
+            height = MAX_DIM;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          setter(dataUrl);
+        } else {
+          setter(event.target?.result as string);
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -150,13 +204,32 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
       return;
     }
     if (!initialKm || !finalKm) {
-      setError('Por favor, preencha os campos de KM inicial e KM final.');
+      setError('Por favor, informe obrigatoriamente a quilometragem do veículo (KM inicial e KM final).');
       return;
     }
     if (Number(finalKm) < Number(initialKm)) {
       setError('A quilometragem final não pode ser menor que a quilometragem inicial.');
       return;
     }
+
+    // MANDATORY PHOTO VALIDATIONS
+    if (!fotoFrente) {
+      setError('É OBRIGATÓRIO enviar a foto da FRENTE do veículo para concluir o checklist.');
+      return;
+    }
+    if (!fotoFundo) {
+      setError('É OBRIGATÓRIO enviar a foto do FUNDO (Traseira) do veículo para concluir o checklist.');
+      return;
+    }
+    if (!fotoLateralEsquerda) {
+      setError('É OBRIGATÓRIO enviar a foto da LATERAL ESQUERDA do veículo para concluir o checklist.');
+      return;
+    }
+    if (!fotoLateralDireita) {
+      setError('É OBRIGATÓRIO enviar a foto da LATERAL DIREITA do veículo para concluir o checklist.');
+      return;
+    }
+
     if (!saidaHorario || !saidaDestino || !saidaCidade) {
       setError('Por favor, preencha todos os dados de saída da base.');
       return;
@@ -188,7 +261,11 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
       farois,
       saidaHorario,
       saidaDestino,
-      saidaCidade
+      saidaCidade,
+      fotoFrente,
+      fotoFundo,
+      fotoLateralEsquerda,
+      fotoLateralDireita,
     };
 
     try {
@@ -207,19 +284,101 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
       }
 
       setSuccess('Checklist de veículo enviado com sucesso!');
+      setLastSubmittedInfo({
+        vehicle: vehicleLabel,
+        date: date.split('-').reverse().join('/'),
+        km: `${finalKm} KM`,
+        destination: `${saidaDestino} (${saidaCidade})`
+      });
+      setShowSuccessModal(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       
-      // Reset checklist non-static fields
+      // Reset checklist non-static fields and photos
       setInitialKm('');
       setFinalKm('');
       setSaidaHorario('');
       setSaidaDestino('');
       setSaidaCidade('');
+      setFotoFrente('');
+      setFotoFundo('');
+      setFotoLateralEsquerda('');
+      setFotoLateralDireita('');
 
       // Reload lists
       loadData();
     } catch (err: any) {
       setError(err.message);
     }
+  };
+
+  const renderPhotoInput = (
+    id: string,
+    label: string,
+    value: string,
+    setter: (val: string) => void
+  ) => {
+    const isFilled = !!value;
+    return (
+      <div className={`p-4 border rounded-2xl transition-all ${
+        isFilled ? 'bg-emerald-50/50 border-emerald-200' : 'bg-slate-50 border-slate-200'
+      }`}>
+        <div className="flex justify-between items-center mb-2.5">
+          <label htmlFor={id} className="text-xs font-bold text-slate-800 flex items-center space-x-1.5 cursor-pointer">
+            <Camera className="h-4 w-4 text-emerald-600" />
+            <span>{label}</span>
+          </label>
+          <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+            isFilled ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+          }`}>
+            {isFilled ? '✅ Anexada' : '⚠️ Obrigatório'}
+          </span>
+        </div>
+
+        {value ? (
+          <div className="relative group rounded-xl overflow-hidden border border-emerald-300 aspect-video bg-slate-900 flex items-center justify-center shadow-inner">
+            <img src={value} alt={label} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 p-2">
+              <button
+                type="button"
+                onClick={() => setSelectedPhotoZoom({ title: label, url: value })}
+                className="px-2.5 py-1.5 bg-white text-slate-800 text-xxs font-bold rounded-lg shadow flex items-center space-x-1 cursor-pointer hover:bg-slate-100"
+              >
+                <Maximize2 className="h-3 w-3" />
+                <span>Ampliar</span>
+              </button>
+              <label htmlFor={id} className="px-2.5 py-1.5 bg-emerald-600 text-white text-xxs font-bold rounded-lg shadow flex items-center space-x-1 cursor-pointer hover:bg-emerald-700">
+                <span>Trocar</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setter('')}
+                className="px-2.5 py-1.5 bg-red-600 text-white text-xxs font-bold rounded-lg shadow flex items-center space-x-1 cursor-pointer hover:bg-red-700"
+              >
+                <span>Remover</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <label
+            htmlFor={id}
+            className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl bg-white text-center cursor-pointer transition-colors group"
+          >
+            <Camera className="h-6 w-6 text-slate-400 group-hover:text-emerald-600 mb-1" />
+            <span className="text-xs font-bold text-slate-700 group-hover:text-emerald-700">Tirar / Anexar Foto</span>
+            <span className="text-[10px] text-slate-400 mt-0.5">Clique para abrir câmera ou galeria</span>
+          </label>
+        )}
+
+        <input
+          id={id}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={(e) => handlePhotoUpload(e, setter)}
+          className="hidden"
+        />
+      </div>
+    );
   };
 
   const handleToggle = (item: string, value: boolean, setter: React.Dispatch<React.SetStateAction<boolean>>) => {
@@ -305,131 +464,227 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
 
         {/* Driver's Trip Schedule Section (Read-Only) */}
         <div className="mb-8 bg-white border border-slate-150 rounded-3xl p-6 shadow-sm space-y-6" id="driver-schedule-section">
-          <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+          <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <h3 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
               <Calendar className="h-4.5 w-4.5 text-emerald-600" />
               <span>Sua Escala de Viagens</span>
             </h3>
-            <span className="text-xxs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100 font-bold">
-              HOJE: {todayStr.split('-').reverse().join('/')}
-            </span>
+            
+            <div className="flex items-center space-x-2">
+              <span className="text-xxs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100 font-bold">
+                HOJE: {todayStr.split('-').reverse().join('/')}
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Today's Trips */}
+          {/* Driver Date Filter */}
+          <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-2">
+              <label htmlFor="driver-date-filter" className="text-xs font-bold text-slate-700 whitespace-nowrap flex items-center space-x-1">
+                <Clock className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Filtrar Demandas por Data:</span>
+              </label>
+              <input
+                id="driver-date-filter"
+                type="date"
+                value={driverFilterDate}
+                onChange={(e) => setDriverFilterDate(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+              />
+              {driverFilterDate && (
+                <button
+                  type="button"
+                  onClick={() => setDriverFilterDate('')}
+                  className="px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+                >
+                  Limpar Filtro
+                </button>
+              )}
+            </div>
+            {driverFilterDate && (
+              <span className="text-xs font-semibold text-emerald-700">
+                Filtro ativo para {driverFilterDate.split('-').reverse().join('/')}
+              </span>
+            )}
+          </div>
+
+          {driverFilterDate ? (
+            /* Filtered Demands View */
             <div className="space-y-3">
               <h4 className="text-[10px] font-extrabold text-emerald-700 uppercase tracking-wider flex items-center space-x-1.5 bg-emerald-50/50 px-3 py-1.5 rounded-lg w-fit">
-                <Clock className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Viagem(ns) de Hoje</span>
+                <Calendar className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Demandas para {driverFilterDate.split('-').reverse().join('/')} ({mySchedules.filter(s => s.startDate <= driverFilterDate && s.endDate >= driverFilterDate).length})</span>
               </h4>
 
-              {todaySchedules.length === 0 ? (
+              {mySchedules.filter(s => s.startDate <= driverFilterDate && s.endDate >= driverFilterDate).length === 0 ? (
                 <div className="p-5 border border-dashed border-slate-200 rounded-2xl text-center text-xs text-slate-400 font-semibold bg-slate-50/50">
-                  Nenhuma viagem agendada para você hoje.
+                  Nenhuma demanda de viagem agendada para você na data {driverFilterDate.split('-').reverse().join('/')}.
                 </div>
               ) : (
-                <div className="space-y-3.5">
-                  {todaySchedules.map((s) => (
-                    <div key={s.id} className="p-4 border border-slate-150 rounded-2xl bg-white shadow-xs hover:border-emerald-200 transition-all space-y-2.5">
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          <p className="text-[9px] font-extrabold text-emerald-600 uppercase tracking-widest">
-                            {s.requestType} {s.recurrentTypeDetails ? `(${s.recurrentTypeDetails})` : ''}
-                          </p>
-                          <h5 className="text-xs font-bold text-slate-900 mt-0.5">{s.patientName}</h5>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+                  {mySchedules
+                    .filter(s => s.startDate <= driverFilterDate && s.endDate >= driverFilterDate)
+                    .map((s) => (
+                      <div key={s.id} className="p-4 border border-slate-150 rounded-2xl bg-white shadow-xs hover:border-emerald-200 transition-all space-y-2.5">
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <p className="text-[9px] font-extrabold text-emerald-600 uppercase tracking-widest">
+                              {s.requestType} {s.recurrentTypeDetails ? `(${s.recurrentTypeDetails})` : ''}
+                            </p>
+                            <h5 className="text-xs font-bold text-slate-900 mt-0.5">{s.patientName}</h5>
+                          </div>
+                          <span className="shrink-0 text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-100 uppercase tracking-wide">
+                            {driverFilterDate === todayStr ? 'Hoje' : driverFilterDate.split('-').reverse().join('/')}
+                          </span>
                         </div>
-                        <span className="shrink-0 text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-100 uppercase tracking-wide">
-                          Hoje
-                        </span>
-                      </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-600">
-                        <div className="flex items-center space-x-1.5">
-                          <Landmark className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate"><strong>Destino:</strong> {getHospitalName(s.hospitalId)}</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-600">
+                          <div className="flex items-center space-x-1.5">
+                            <Landmark className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate"><strong>Destino:</strong> {getHospitalName(s.hospitalId)}</span>
+                          </div>
+                          <div className="flex items-center space-x-1.5">
+                            <Truck className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate"><strong>Veículo:</strong> {getVehicleName(s.vehicleId)}</span>
+                          </div>
+                          <div className="flex items-center space-x-1.5 col-span-1 sm:col-span-2">
+                            <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span><strong>Período:</strong> {s.startDate.split('-').reverse().join('/')} até {s.endDate.split('-').reverse().join('/')}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-1.5">
-                          <Truck className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate"><strong>Veículo:</strong> {getVehicleName(s.vehicleId)}</span>
-                        </div>
-                        <div className="flex items-center space-x-1.5 col-span-1 sm:col-span-2">
-                          <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          <span><strong>Período:</strong> {s.startDate.split('-').reverse().join('/')} até {s.endDate.split('-').reverse().join('/')}</span>
-                        </div>
-                      </div>
 
-                      {(s.companionName || s.companionPhone1 || s.companionPhone2) && (
-                        <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1 text-[10px] text-slate-500">
-                          <p className="font-bold text-slate-600 uppercase tracking-wide">Acompanhante & Contatos:</p>
-                          {s.companionName && <p><strong>Nome:</strong> {s.companionName}</p>}
-                          {(s.companionPhone1 || s.companionPhone2) && (
-                            <p><strong>Contatos:</strong> {[s.companionPhone1, s.companionPhone2].filter(Boolean).join(' | ')}</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        {(s.companionName || s.companionPhone1 || s.companionPhone2) && (
+                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1 text-[10px] text-slate-500">
+                            <p className="font-bold text-slate-600 uppercase tracking-wide">Acompanhante & Contatos:</p>
+                            {s.companionName && <p><strong>Nome:</strong> {s.companionName}</p>}
+                            {(s.companionPhone1 || s.companionPhone2) && (
+                              <p><strong>Contatos:</strong> {[s.companionPhone1, s.companionPhone2].filter(Boolean).join(' | ')}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
+          ) : (
+            /* Default Today / Upcoming View */
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Today's Trips */}
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-extrabold text-emerald-700 uppercase tracking-wider flex items-center space-x-1.5 bg-emerald-50/50 px-3 py-1.5 rounded-lg w-fit">
+                  <Clock className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>Viagem(ns) de Hoje</span>
+                </h4>
 
-            {/* Upcoming Trips */}
-            <div className="space-y-3">
-              <h4 className="text-[10px] font-extrabold text-blue-700 uppercase tracking-wider flex items-center space-x-1.5 bg-blue-50/50 px-3 py-1.5 rounded-lg w-fit">
-                <Calendar className="h-3.5 w-3.5 text-blue-600" />
-                <span>Próximas Viagens</span>
-              </h4>
-
-              {upcomingSchedules.length === 0 ? (
-                <div className="p-5 border border-dashed border-slate-200 rounded-2xl text-center text-xs text-slate-400 font-semibold bg-slate-50/50">
-                  Nenhuma viagem futura agendada para você.
-                </div>
-              ) : (
-                <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
-                  {upcomingSchedules.map((s) => (
-                    <div key={s.id} className="p-4 border border-slate-150 rounded-2xl bg-white shadow-xs hover:border-blue-200 transition-all space-y-2.5">
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          <p className="text-[9px] font-extrabold text-blue-600 uppercase tracking-widest">
-                            {s.requestType} {s.recurrentTypeDetails ? `(${s.recurrentTypeDetails})` : ''}
-                          </p>
-                          <h5 className="text-xs font-bold text-slate-900 mt-0.5">{s.patientName}</h5>
+                {todaySchedules.length === 0 ? (
+                  <div className="p-5 border border-dashed border-slate-200 rounded-2xl text-center text-xs text-slate-400 font-semibold bg-slate-50/50">
+                    Nenhuma viagem agendada para você hoje.
+                  </div>
+                ) : (
+                  <div className="space-y-3.5">
+                    {todaySchedules.map((s) => (
+                      <div key={s.id} className="p-4 border border-slate-150 rounded-2xl bg-white shadow-xs hover:border-emerald-200 transition-all space-y-2.5">
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <p className="text-[9px] font-extrabold text-emerald-600 uppercase tracking-widest">
+                              {s.requestType} {s.recurrentTypeDetails ? `(${s.recurrentTypeDetails})` : ''}
+                            </p>
+                            <h5 className="text-xs font-bold text-slate-900 mt-0.5">{s.patientName}</h5>
+                          </div>
+                          <span className="shrink-0 text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-100 uppercase tracking-wide">
+                            Hoje
+                          </span>
                         </div>
-                        <span className="shrink-0 text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-100 uppercase tracking-wide">
-                          {s.startDate.split('-').reverse().join('/')}
-                        </span>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-600">
+                          <div className="flex items-center space-x-1.5">
+                            <Landmark className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate"><strong>Destino:</strong> {getHospitalName(s.hospitalId)}</span>
+                          </div>
+                          <div className="flex items-center space-x-1.5">
+                            <Truck className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate"><strong>Veículo:</strong> {getVehicleName(s.vehicleId)}</span>
+                          </div>
+                          <div className="flex items-center space-x-1.5 col-span-1 sm:col-span-2">
+                            <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span><strong>Período:</strong> {s.startDate.split('-').reverse().join('/')} até {s.endDate.split('-').reverse().join('/')}</span>
+                          </div>
+                        </div>
+
+                        {(s.companionName || s.companionPhone1 || s.companionPhone2) && (
+                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1 text-[10px] text-slate-500">
+                            <p className="font-bold text-slate-600 uppercase tracking-wide">Acompanhante & Contatos:</p>
+                            {s.companionName && <p><strong>Nome:</strong> {s.companionName}</p>}
+                            {(s.companionPhone1 || s.companionPhone2) && (
+                              <p><strong>Contatos:</strong> {[s.companionPhone1, s.companionPhone2].filter(Boolean).join(' | ')}</p>
+                            )}
+                          </div>
+                        )}
                       </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-600">
-                        <div className="flex items-center space-x-1.5">
-                          <Landmark className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate"><strong>Destino:</strong> {getHospitalName(s.hospitalId)}</span>
+              {/* Upcoming Trips */}
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-extrabold text-blue-700 uppercase tracking-wider flex items-center space-x-1.5 bg-blue-50/50 px-3 py-1.5 rounded-lg w-fit">
+                  <Calendar className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Próximas Viagens</span>
+                </h4>
+
+                {upcomingSchedules.length === 0 ? (
+                  <div className="p-5 border border-dashed border-slate-200 rounded-2xl text-center text-xs text-slate-400 font-semibold bg-slate-50/50">
+                    Nenhuma viagem futura agendada para você.
+                  </div>
+                ) : (
+                  <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                    {upcomingSchedules.map((s) => (
+                      <div key={s.id} className="p-4 border border-slate-150 rounded-2xl bg-white shadow-xs hover:border-blue-200 transition-all space-y-2.5">
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <p className="text-[9px] font-extrabold text-blue-600 uppercase tracking-widest">
+                              {s.requestType} {s.recurrentTypeDetails ? `(${s.recurrentTypeDetails})` : ''}
+                            </p>
+                            <h5 className="text-xs font-bold text-slate-900 mt-0.5">{s.patientName}</h5>
+                          </div>
+                          <span className="shrink-0 text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-100 uppercase tracking-wide">
+                            {s.startDate.split('-').reverse().join('/')}
+                          </span>
                         </div>
-                        <div className="flex items-center space-x-1.5">
-                          <Truck className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate"><strong>Veículo:</strong> {getVehicleName(s.vehicleId)}</span>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-600">
+                          <div className="flex items-center space-x-1.5">
+                            <Landmark className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate"><strong>Destino:</strong> {getHospitalName(s.hospitalId)}</span>
+                          </div>
+                          <div className="flex items-center space-x-1.5">
+                            <Truck className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate"><strong>Veículo:</strong> {getVehicleName(s.vehicleId)}</span>
+                          </div>
+                          <div className="flex items-center space-x-1.5 col-span-1 sm:col-span-2">
+                            <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span><strong>Período:</strong> {s.startDate.split('-').reverse().join('/')} até {s.endDate.split('-').reverse().join('/')}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-1.5 col-span-1 sm:col-span-2">
-                          <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          <span><strong>Período:</strong> {s.startDate.split('-').reverse().join('/')} até {s.endDate.split('-').reverse().join('/')}</span>
-                        </div>
+
+                        {(s.companionName || s.companionPhone1 || s.companionPhone2) && (
+                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1 text-[10px] text-slate-500">
+                            <p className="font-bold text-slate-600 uppercase tracking-wide">Acompanhante & Contatos:</p>
+                            {s.companionName && <p><strong>Nome:</strong> {s.companionName}</p>}
+                            {(s.companionPhone1 || s.companionPhone2) && (
+                              <p><strong>Contatos:</strong> {[s.companionPhone1, s.companionPhone2].filter(Boolean).join(' | ')}</p>
+                            )}
+                          </div>
+                        )}
                       </div>
-
-                      {(s.companionName || s.companionPhone1 || s.companionPhone2) && (
-                        <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1 text-[10px] text-slate-500">
-                          <p className="font-bold text-slate-600 uppercase tracking-wide">Acompanhante & Contatos:</p>
-                          {s.companionName && <p><strong>Nome:</strong> {s.companionName}</p>}
-                          {(s.companionPhone1 || s.companionPhone2) && (
-                            <p><strong>Contatos:</strong> {[s.companionPhone1, s.companionPhone2].filter(Boolean).join(' | ')}</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -493,7 +748,7 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
 
                   <div>
                     <label htmlFor="chk-final-km" className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">
-                      KM Final
+                      KM Final <span className="text-red-500">*</span>
                     </label>
                     <input
                       id="chk-final-km"
@@ -504,6 +759,29 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
                       className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white text-xs font-semibold"
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* Fotos Obrigatorias do Veículo */}
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center justify-between mb-1 pb-2 border-b border-slate-100">
+                  <span className="flex items-center space-x-1.5">
+                    <Camera className="h-4.5 w-4.5 text-emerald-600" />
+                    <span>Fotos Obrigatórias do Veículo</span>
+                  </span>
+                  <span className="text-[10px] bg-red-50 text-red-700 font-extrabold px-2.5 py-0.5 rounded-full border border-red-200 uppercase">
+                    4 Fotos Exigidas
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  Tire ou anexe obrigatoriamente as fotos dos 4 ângulos do veículo para validar a vistoria antes de enviar.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {renderPhotoInput('chk-photo-frente', 'Foto da Frente', fotoFrente, setFotoFrente)}
+                  {renderPhotoInput('chk-photo-fundo', 'Foto do Fundo / Traseira', fotoFundo, setFotoFundo)}
+                  {renderPhotoInput('chk-photo-lat-esq', 'Foto Lateral Esquerda', fotoLateralEsquerda, setFotoLateralEsquerda)}
+                  {renderPhotoInput('chk-photo-lat-dir', 'Foto Lateral Direita', fotoLateralDireita, setFotoLateralDireita)}
                 </div>
               </div>
 
@@ -669,6 +947,34 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
                                 <div>Faróis: {chk.farois ? '🆗' : '❌'}</div>
                               </div>
                             </div>
+
+                            {(chk.fotoFrente || chk.fotoFundo || chk.fotoLateralEsquerda || chk.fotoLateralDireita) && (
+                              <div className="pt-2 border-t border-slate-100">
+                                <strong className="text-slate-700 block mb-1">Fotos do Veículo:</strong>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {[
+                                    { name: 'Frente', url: chk.fotoFrente },
+                                    { name: 'Fundo', url: chk.fotoFundo },
+                                    { name: 'Lat. Esquerda', url: chk.fotoLateralEsquerda },
+                                    { name: 'Lat. Direita', url: chk.fotoLateralDireita },
+                                  ].map((p, idx) => p.url ? (
+                                    <div 
+                                      key={idx}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedPhotoZoom({ title: `${chk.vehicleModelPlate} - ${p.name}`, url: p.url! });
+                                      }}
+                                      className="relative group rounded-lg overflow-hidden border border-slate-200 aspect-video bg-black/5 cursor-pointer hover:border-emerald-500 transition-colors"
+                                    >
+                                      <img src={p.url} alt={p.name} className="w-full h-full object-cover" />
+                                      <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[9px] font-bold text-center py-0.5 truncate">
+                                        {p.name}
+                                      </span>
+                                    </div>
+                                  ) : null)}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -682,6 +988,85 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
         </div>
 
       </main>
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn" onClick={() => setShowSuccessModal(false)}>
+          <div className="relative max-w-md w-full bg-white border border-emerald-100 rounded-3xl overflow-hidden shadow-2xl p-6 text-center space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+              <CheckCircle className="h-10 w-10 text-emerald-600" />
+            </div>
+            
+            <div>
+              <span className="inline-block text-[10px] font-extrabold uppercase tracking-widest text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 mb-2">
+                Envio Confirmado
+              </span>
+              <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">Checklist Registrado com Sucesso!</h3>
+              <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                O checklist do seu veículo foi gravado no sistema com sucesso e já está visível para a gestão, coordenação e administração.
+              </p>
+            </div>
+
+            {lastSubmittedInfo && (
+              <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-2xl text-left space-y-1.5 text-xs text-slate-700">
+                <p className="flex justify-between border-b border-slate-200/60 pb-1">
+                  <span className="text-slate-400 font-semibold">Veículo:</span>
+                  <strong className="text-slate-800">{lastSubmittedInfo.vehicle}</strong>
+                </p>
+                <p className="flex justify-between border-b border-slate-200/60 pb-1">
+                  <span className="text-slate-400 font-semibold">Data do Envio:</span>
+                  <strong className="text-slate-800">{lastSubmittedInfo.date}</strong>
+                </p>
+                <p className="flex justify-between border-b border-slate-200/60 pb-1">
+                  <span className="text-slate-400 font-semibold">KM Registrado:</span>
+                  <strong className="text-slate-800">{lastSubmittedInfo.km}</strong>
+                </p>
+                <p className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">Destino:</span>
+                  <strong className="text-slate-800">{lastSubmittedInfo.destination}</strong>
+                </p>
+              </div>
+            )}
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
+              >
+                Entendido / Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Zoom Photo Modal */}
+      {selectedPhotoZoom && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn" onClick={() => setSelectedPhotoZoom(null)}>
+          <div className="relative max-w-3xl w-full bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-2xl p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-800 text-white">
+              <h4 className="text-sm font-bold flex items-center space-x-2">
+                <Camera className="h-4 w-4 text-emerald-400" />
+                <span>{selectedPhotoZoom.title}</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setSelectedPhotoZoom(null)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="max-h-[70vh] flex items-center justify-center overflow-hidden rounded-xl bg-black">
+              <img src={selectedPhotoZoom.url} alt={selectedPhotoZoom.title} className="max-h-[70vh] w-auto object-contain" />
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer className="bg-white border-t border-slate-150 py-6 text-center text-xs text-slate-400 font-medium mt-12">
         <p>© 2026 Secretaria Municipal de Saúde. Todos os direitos reservados.</p>

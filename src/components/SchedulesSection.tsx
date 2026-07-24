@@ -43,6 +43,7 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
   const [companionName, setCompanionName] = useState('');
   const [companionPhone1, setCompanionPhone1] = useState('');
   const [companionPhone2, setCompanionPhone2] = useState('');
+  const [isBedridden, setIsBedridden] = useState(false);
 
   // Edit State
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
@@ -55,6 +56,9 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
 
   // Filter & Search states for the travels table
   const [activeTab, setActiveTab] = useState<'ativos' | 'historico'>('ativos');
+  const [filterDate, setFilterDate] = useState('');
+  const [filterVehicleId, setFilterVehicleId] = useState('');
+  const [filterSearchTerm, setFilterSearchTerm] = useState('');
   const [showPrintWarning, setShowPrintWarning] = useState(false);
   const [confirmConfig, setConfirmConfig] = useState<{
     isOpen: boolean;
@@ -172,6 +176,7 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
     setCompanionName('');
     setCompanionPhone1('');
     setCompanionPhone2('');
+    setIsBedridden(false);
     setEditingScheduleId(null);
   };
 
@@ -202,7 +207,8 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
         recurrentTypeDetails: requestType === 'Procedimento especializado recorrente' ? recurrentTypeDetails : undefined,
         companionName: companionName.trim() || undefined,
         companionPhone1: companionPhone1.trim() || undefined,
-        companionPhone2: companionPhone2.trim() || undefined
+        companionPhone2: companionPhone2.trim() || undefined,
+        isBedridden
       };
 
       const url = editingScheduleId ? `/api/schedules/${editingScheduleId}` : '/api/schedules';
@@ -254,6 +260,10 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
     if (s.recurrentTypeDetails) {
       setRecurrentTypeDetails(s.recurrentTypeDetails);
     }
+    setCompanionName(s.companionName || '');
+    setCompanionPhone1(s.companionPhone1 || '');
+    setCompanionPhone2(s.companionPhone2 || '');
+    setIsBedridden(Boolean(s.isBedridden));
     setCompanionName(s.companionName || '');
     setCompanionPhone1(s.companionPhone1 || '');
     setCompanionPhone2(s.companionPhone2 || '');
@@ -416,6 +426,30 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
         const assignedVehicleId = isReturnDate ? (s.returnVehicleId || s.vehicleId) : s.vehicleId;
         
         if (assignedVehicleId === vId) {
+          const seats = (s.companionName && s.companionName.trim().length > 0) ? 2 : 1;
+          count += seats;
+        }
+      }
+    }
+    return count;
+  };
+
+  const getBedriddenOccupancyOnDate = (vId: string, dateStr: string, excludeScheduleId?: string) => {
+    let count = 0;
+    const dObj = new Date(dateStr);
+    
+    for (const s of schedules) {
+      if (excludeScheduleId && s.id === excludeScheduleId) continue;
+      if (!s.isBedridden) continue;
+      
+      const sStart = new Date(s.startDate);
+      const sEnd = new Date(s.endDate);
+      
+      if (dObj >= sStart && dObj <= sEnd) {
+        const isReturnDate = dateStr === s.endDate;
+        const assignedVehicleId = isReturnDate ? (s.returnVehicleId || s.vehicleId) : s.vehicleId;
+        
+        if (assignedVehicleId === vId) {
           count++;
         }
       }
@@ -427,6 +461,55 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
     const h = hospitals.find(item => item.id === hId);
     return h ? h.name : 'Desconhecido';
   };
+
+  const filteredSchedules = schedules.filter((s) => {
+    if (filterDate) {
+      const matchesDate = s.startDate <= filterDate && s.endDate >= filterDate;
+      if (!matchesDate) return false;
+    }
+    if (filterVehicleId) {
+      const matchesVehicle = s.vehicleId === filterVehicleId || s.returnVehicleId === filterVehicleId;
+      if (!matchesVehicle) return false;
+    }
+    if (filterSearchTerm.trim()) {
+      const q = normalizeText(filterSearchTerm);
+      const patient = normalizeText(s.patientName || '');
+      const hosp = normalizeText(getHospitalName(s.hospitalId));
+      const veh = normalizeText(getVehicleName(s.vehicleId));
+      const retVeh = normalizeText(getVehicleName(s.returnVehicleId || ''));
+      const driver = normalizeText(getDriverName(s.driverId || ''));
+      const retDriver = normalizeText(getDriverName(s.returnDriverId || ''));
+      const matchesText = patient.includes(q) || hosp.includes(q) || veh.includes(q) || retVeh.includes(q) || driver.includes(q) || retDriver.includes(q);
+      if (!matchesText) return false;
+    }
+    return true;
+  });
+
+  const filteredHistory = history.filter((h) => {
+    if (filterDate) {
+      const matchesDate = h.startDate <= filterDate && h.endDate >= filterDate;
+      if (!matchesDate) return false;
+    }
+    if (filterVehicleId) {
+      const vehObj = vehicles.find(v => v.id === filterVehicleId);
+      if (vehObj) {
+        const qPlate = normalizeText(vehObj.plate);
+        const qModel = normalizeText(vehObj.model);
+        const hVeh = normalizeText(h.vehicleDetails || '');
+        const matchesVehicle = hVeh.includes(qPlate) || hVeh.includes(qModel);
+        if (!matchesVehicle) return false;
+      }
+    }
+    if (filterSearchTerm.trim()) {
+      const q = normalizeText(filterSearchTerm);
+      const patient = normalizeText(h.patientName || '');
+      const hosp = normalizeText(h.hospitalName || '');
+      const veh = normalizeText(h.vehicleDetails || '');
+      const matchesText = patient.includes(q) || hosp.includes(q) || veh.includes(q);
+      if (!matchesText) return false;
+    }
+    return true;
+  });
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -529,11 +612,75 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                   </div>
                 </div>
 
+                {/* Condição do Paciente: Acamado ou Não Acamado */}
+                <div className={`p-4 rounded-2xl border transition-all ${isBedridden ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20' : 'bg-slate-50 border-slate-150'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="text-base">🛏️</span> Condição do Paciente
+                    </span>
+                    {isBedridden && (
+                      <span className="text-[10px] font-black bg-rose-600 text-white px-2.5 py-0.5 rounded-full uppercase tracking-widest shadow-sm">
+                        Paciente Acamado
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className={`flex items-center space-x-2.5 p-3 rounded-xl border cursor-pointer transition-all ${!isBedridden ? 'bg-white border-blue-500 text-blue-900 font-bold shadow-sm' : 'bg-white/80 border-slate-200 text-slate-700'}`}>
+                      <input
+                        type="radio"
+                        name="patient-condition"
+                        checked={!isBedridden}
+                        onChange={() => setIsBedridden(false)}
+                        className="text-blue-600 focus:ring-blue-500 h-4 w-4"
+                      />
+                      <div className="text-xs">
+                        <span className="font-bold block">Não Acamado</span>
+                        <span className="text-[10px] text-slate-500">Senta em poltrona/assento padrão</span>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-center space-x-2.5 p-3 rounded-xl border cursor-pointer transition-all ${isBedridden ? 'bg-rose-100 border-rose-500 text-rose-950 font-black shadow-sm' : 'bg-white/80 border-slate-200 text-slate-700'}`}>
+                      <input
+                        type="radio"
+                        name="patient-condition"
+                        checked={isBedridden}
+                        onChange={() => setIsBedridden(true)}
+                        className="text-rose-600 focus:ring-rose-500 h-4 w-4"
+                      />
+                      <div className="text-xs">
+                        <span className="font-bold block flex items-center gap-1 text-rose-950">
+                          <span>Acamado (Maca/Leito)</span>
+                        </span>
+                        <span className="text-[10px] text-rose-700">Necessita de vaga/maca na ambulância</span>
+                      </div>
+                    </label>
+                  </div>
+
+                  {isBedridden && (() => {
+                    const selVeh = vehicles.find(v => v.id === vehicleId);
+                    if (selVeh && selVeh.type !== 'Ambulância') {
+                      return (
+                        <div className="mt-2.5 p-2.5 bg-rose-100 border border-rose-300 rounded-xl text-xs text-rose-900 flex items-center space-x-2">
+                          <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                          <span>Atenção: Apenas <strong>Ambulâncias</strong> possuem leitos/macas para pacientes acamados. Selecione uma ambulância como veículo.</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+
                 {/* Companion details (Optional) */}
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-150 space-y-3">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                    Acompanhante & Contatos
-                  </span>
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                      Acompanhante & Contatos
+                    </span>
+                    <span className="text-[10px] text-blue-700 font-semibold bg-blue-50 px-2 py-0.5 rounded-md border border-blue-150">
+                      ℹ️ O acompanhante ocupa +1 vaga no veículo
+                    </span>
+                  </div>
                   
                   <div>
                     <label htmlFor="sched-companion-name" className="block text-xs font-semibold text-slate-700 mb-1">
@@ -542,7 +689,7 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                     <input
                       id="sched-companion-name"
                       type="text"
-                      placeholder="Nome do acompanhante"
+                      placeholder="Nome do acompanhante (se houver)"
                       value={companionName}
                       onChange={(e) => setCompanionName(e.target.value)}
                       className="block w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -682,17 +829,28 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                     
                     {/* Veículo */}
                     <div>
-                      <label htmlFor="sched-vehicle" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                      <label htmlFor="sched-vehicle" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between flex-wrap gap-1">
                         <span>{tripType === 'apenas_retorno' ? 'Veículo de Retorno' : 'Veículo'}</span>
                         {vehicleId && startDate && (() => {
                           const v = vehicles.find(x => x.id === vehicleId);
                           if (!v) return null;
                           const count = getVehicleOccupancyOnDate(v.id, startDate, editingScheduleId);
                           const isFull = count >= v.maxPassengers;
+                          const bedriddenCount = getBedriddenOccupancyOnDate(v.id, startDate, editingScheduleId);
+                          const bedriddenCap = v.vagasAcamados ?? 1;
+                          const isBedriddenFull = bedriddenCount >= bedriddenCap;
+
                           return (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isFull ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                              Ocupação: {count}/{v.maxPassengers} {isFull ? '(LOTADO)' : '(Vagas disponíveis)'}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isFull ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                Geral: {count}/{v.maxPassengers} {isFull ? '(LOTADO)' : ''}
+                              </span>
+                              {v.type === 'Ambulância' && (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isBedriddenFull ? 'bg-rose-200 text-rose-900 border border-rose-300' : 'bg-rose-100 text-rose-800 border border-rose-200'}`}>
+                                  🛏️ Acamados: {bedriddenCount}/{bedriddenCap} {isBedriddenFull ? '(SEM VAGAS)' : ''}
+                                </span>
+                              )}
+                            </div>
                           );
                         })()}
                       </label>
@@ -710,7 +868,7 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                         </option>
                         {vehicles.map((v) => (
                           <option key={v.id} value={v.id}>
-                            {v.brand} {v.model} ({v.plate}) — Cap: {v.maxPassengers} passageiros
+                            {v.type === 'Ambulância' ? '🚑 ' : ''}{v.brand} {v.model} ({v.plate}) — Cap: {v.maxPassengers} pass.{v.type === 'Ambulância' ? ` | 🛏️ ${v.vagasAcamados ?? 1} vaga(s) acamados` : ''}
                           </option>
                         ))}
                       </select>
@@ -765,17 +923,28 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
 
                       {useDifferentReturnVehicle && (
                         <div>
-                          <label htmlFor="sched-return-vehicle" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                          <label htmlFor="sched-return-vehicle" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between flex-wrap gap-1">
                             <span>Veículo de Volta</span>
                             {returnVehicleId && endDate && (() => {
                               const v = vehicles.find(x => x.id === returnVehicleId);
                               if (!v) return null;
                               const count = getVehicleOccupancyOnDate(v.id, endDate, editingScheduleId);
                               const isFull = count >= v.maxPassengers;
+                              const bedriddenCount = getBedriddenOccupancyOnDate(v.id, endDate, editingScheduleId);
+                              const bedriddenCap = v.vagasAcamados ?? 1;
+                              const isBedriddenFull = bedriddenCount >= bedriddenCap;
+
                               return (
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isFull ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                  Ocupação Volta: {count}/{v.maxPassengers} {isFull ? '(LOTADO)' : '(Vagas disponíveis)'}
-                                </span>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isFull ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                    Geral Volta: {count}/{v.maxPassengers} {isFull ? '(LOTADO)' : ''}
+                                  </span>
+                                  {v.type === 'Ambulância' && (
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isBedriddenFull ? 'bg-rose-200 text-rose-900 border border-rose-300' : 'bg-rose-100 text-rose-800 border border-rose-200'}`}>
+                                      🛏️ Acamados Volta: {bedriddenCount}/{bedriddenCap} {isBedriddenFull ? '(SEM VAGAS)' : ''}
+                                    </span>
+                                  )}
+                                </div>
                               );
                             })()}
                           </label>
@@ -789,7 +958,7 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                             <option value="">Selecione o veículo para volta...</option>
                             {vehicles.map((v) => (
                               <option key={v.id} value={v.id}>
-                                {v.brand} {v.model} ({v.plate}) — Cap: {v.maxPassengers} passageiros
+                                {v.type === 'Ambulância' ? '🚑 ' : ''}{v.brand} {v.model} ({v.plate}) — Cap: {v.maxPassengers} pass.{v.type === 'Ambulância' ? ` | 🛏️ ${v.vagasAcamados ?? 1} vaga(s) acamados` : ''}
                               </option>
                             ))}
                           </select>
@@ -1005,7 +1174,7 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                 }`}
               >
                 <Truck className="h-4 w-4" />
-                <span>Agendamentos Ativos ({schedules.length})</span>
+                <span>Agendamentos Ativos ({filteredSchedules.length})</span>
               </button>
               <button
                 id="tab-schedules-history"
@@ -1017,7 +1186,7 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                 }`}
               >
                 <FileText className="h-4 w-4" />
-                <span>Histórico de Viagens Concluídas ({history.length})</span>
+                <span>Histórico de Viagens Concluídas ({filteredHistory.length})</span>
               </button>
             </div>
 
@@ -1032,6 +1201,83 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
               <Printer className="h-4 w-4 text-slate-500" />
               <span>Imprimir Lista</span>
             </button>
+          </div>
+
+          {/* Filter Controls Bar */}
+          <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-200 no-print">
+            <div className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center space-x-2">
+              <Clock className="h-4 w-4 text-blue-600" />
+              <span>Filtros de Agendamentos e Viagens</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+              {/* Filter by Date */}
+              <div>
+                <label htmlFor="filter-schedule-date" className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Filtrar por Data:
+                </label>
+                <input
+                  id="filter-schedule-date"
+                  type="date"
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                />
+              </div>
+
+              {/* Filter by Vehicle (Model & Plate) */}
+              <div>
+                <label htmlFor="filter-schedule-vehicle" className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Filtrar por Veículo (Modelo e Placa):
+                </label>
+                <select
+                  id="filter-schedule-vehicle"
+                  value={filterVehicleId}
+                  onChange={(e) => setFilterVehicleId(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                >
+                  <option value="">Todos os Veículos</option>
+                  {vehicles.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.brand} {v.model} ({v.plate})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter by Text Search */}
+              <div>
+                <label htmlFor="filter-schedule-search" className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Buscar por Paciente / Hospital / Motorista:
+                </label>
+                <input
+                  id="filter-schedule-search"
+                  type="text"
+                  placeholder="Digite para buscar..."
+                  value={filterSearchTerm}
+                  onChange={(e) => setFilterSearchTerm(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                />
+              </div>
+            </div>
+
+            {(filterDate || filterVehicleId || filterSearchTerm) && (
+              <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">
+                <span className="text-xs text-blue-700 font-semibold">
+                  Filtros ativos. Mostrando {activeTab === 'ativos' ? filteredSchedules.length : filteredHistory.length} resultados.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterDate('');
+                    setFilterVehicleId('');
+                    setFilterSearchTerm('');
+                  }}
+                  className="px-3 py-1 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
+                >
+                  Limpar Filtros
+                </button>
+              </div>
+            )}
           </div>
 
           {/* List specific error and success alert messages */}
@@ -1072,13 +1318,15 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             </div>
           ) : activeTab === 'ativos' ? (
-            schedules.length === 0 ? (
+            filteredSchedules.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 border border-slate-150 text-center text-slate-400 text-sm">
-                Nenhum agendamento ativo cadastrado.
+                {(filterDate || filterVehicleId || filterSearchTerm)
+                  ? 'Nenhum agendamento ativo encontrado para os filtros selecionados.'
+                  : 'Nenhum agendamento ativo cadastrado.'}
               </div>
             ) : (
               <div className="space-y-4">
-                {schedules.map((s) => {
+                {filteredSchedules.map((s) => {
                   const isCreator = s.createdByUserId === currentUser.id;
                   const isAdmin = currentUser.profile === 'Administrador';
                   const canEdit = (isCreator || isAdmin) && !s.isDeletionPending;
@@ -1124,13 +1372,20 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                         {/* Summary details */}
                         <div className="space-y-3">
                           <div>
-                            <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-1.5 ${
-                              s.requestType === 'Cirurgia' ? 'bg-rose-100 text-rose-800 border border-rose-250/30' :
-                              s.requestType === 'Consulta/Exame' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
-                              'bg-indigo-100 text-indigo-800 border border-indigo-200'
-                            }`}>
-                              {s.requestType === 'Procedimento especializado recorrente' ? `${s.requestType} (${s.recurrentTypeDetails})` : s.requestType}
-                            </span>
+                            <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                              <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                s.requestType === 'Cirurgia' ? 'bg-rose-100 text-rose-800 border border-rose-250/30' :
+                                s.requestType === 'Consulta/Exame' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                                'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                              }`}>
+                                {s.requestType === 'Procedimento especializado recorrente' ? `${s.requestType} (${s.recurrentTypeDetails})` : s.requestType}
+                              </span>
+                              {s.isBedridden && (
+                                <span className="inline-flex items-center gap-1 bg-rose-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm">
+                                  🛏️ Paciente Acamado
+                                </span>
+                              )}
+                            </div>
                             <h4 className="font-extrabold text-slate-950 text-base">{s.patientName}</h4>
                           </div>
 
@@ -1353,13 +1608,15 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
               </div>
             )
           ) : (
-            history.length === 0 ? (
+            filteredHistory.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 border border-slate-150 text-center text-slate-400 text-sm">
-                Nenhum histórico de viagens concluídas arquivadas.
+                {(filterDate || filterVehicleId || filterSearchTerm)
+                  ? 'Nenhum histórico de viagem encontrado para os filtros selecionados.'
+                  : 'Nenhum histórico de viagens concluídas arquivadas.'}
               </div>
             ) : (
               <div className="space-y-4">
-                {history.map((h) => (
+                {filteredHistory.map((h) => (
                   <div key={h.id} className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-2">
