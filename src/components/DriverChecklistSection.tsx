@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ClipboardList, LogOut, Truck, Clock, MapPin, Compass, CheckSquare, PlusCircle, AlertCircle, Trash2, ChevronDown, ChevronUp, CheckCircle, Calendar, User as UserIcon, Landmark, Camera, Maximize2, X, Image as ImageIcon } from 'lucide-react';
 import { User, Vehicle, VehicleChecklist, Schedule, Hospital, Driver } from '../types.js';
+import { getOilMaintenanceStatus } from '../utils/oilChange.js';
 
 interface DriverChecklistSectionProps {
   currentUser: User;
@@ -381,24 +382,54 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
     );
   };
 
+  const currentVehicle = vehicles.find(v => v.id === selectedVehicleId);
+  const currentTripKm = (finalKm && initialKm && Number(finalKm) >= Number(initialKm)) ? (Number(finalKm) - Number(initialKm)) : 0;
+  const oilStatus = currentVehicle ? getOilMaintenanceStatus(currentVehicle, checklists, currentTripKm) : null;
+  const isOilAlertTriggered = Boolean(oilStatus?.isOverdue);
+  const selectedLimitKm = oilStatus?.limitKm || 1000;
+  const kmDrivenSinceLastOil = oilStatus?.totalKmWithTrip || 0;
+
+  useEffect(() => {
+    if (isOilAlertTriggered && oleo) {
+      setOleo(false);
+    }
+  }, [isOilAlertTriggered, oleo]);
+
   const handleToggle = (item: string, value: boolean, setter: React.Dispatch<React.SetStateAction<boolean>>) => {
+    if (item === 'Óleo' && isOilAlertTriggered && !value) {
+      alert('⚠️ A troca de óleo deste veículo está VENCIDA! O parâmetro de óleo não pode ser marcado como OK pelo motorista até que a administração/coordenação registre a manutenção de troca.');
+      return;
+    }
     setter(!value);
   };
 
   const renderToggleItem = (label: string, value: boolean, setter: React.Dispatch<React.SetStateAction<boolean>>) => {
+    const isOilField = label === 'Óleo';
+    const isOilWarning = isOilField && isOilAlertTriggered;
+
     return (
       <button
         type="button"
+        disabled={isOilWarning && !value}
         onClick={() => handleToggle(label, value, setter)}
         className={`flex items-center justify-between p-3.5 border rounded-2xl transition-all font-semibold text-xs ${
-          value 
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-950 shadow-sm shadow-emerald-50' 
-            : 'bg-rose-50 border-rose-200 text-rose-950'
+          isOilWarning
+            ? 'bg-amber-100 border-amber-300 text-amber-950 ring-2 ring-amber-500 cursor-not-allowed opacity-90'
+            : value 
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-950 shadow-sm shadow-emerald-50' 
+              : 'bg-rose-50 border-rose-200 text-rose-950'
         }`}
       >
-        <span className="uppercase tracking-wide">{label}</span>
-        <span className="text-base select-none">
-          {value ? '🆗 OK' : '❌ PENDENTE'}
+        <div className="flex flex-col text-left">
+          <span className="uppercase tracking-wide">{label}</span>
+          {isOilWarning && (
+            <span className="text-[10px] font-extrabold text-amber-800">
+              🚫 BLOQUEADO - TROCA VENCIDA ({kmDrivenSinceLastOil}/{selectedLimitKm} KM)
+            </span>
+          )}
+        </div>
+        <span className="text-base select-none font-bold">
+          {isOilWarning ? '❌ PENDENTE (VENCIDO)' : (value ? 'OK' : '❌ PENDENTE')}
         </span>
       </button>
     );
@@ -700,6 +731,59 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
                 </h3>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* PAINEL INFORMATIVO E ALERTA DE TROCA DE ÓLEO E FILTRO */}
+                  {currentVehicle && oilStatus && (
+                    <div className={`p-4 rounded-2xl border transition-all space-y-2 sm:col-span-2 ${
+                      oilStatus.isOverdue 
+                        ? 'bg-amber-500 text-white border-2 border-amber-600 shadow-lg animate-pulse'
+                        : 'bg-amber-50 border-amber-200 text-amber-950'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-base">🛢️</span>
+                          <h4 className={`text-xs font-black uppercase tracking-wider ${oilStatus.isOverdue ? 'text-yellow-100' : 'text-amber-900'}`}>
+                            Controle de Troca de Óleo e Filtro
+                          </h4>
+                        </div>
+                        <span className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full ${
+                          oilStatus.isOverdue ? 'bg-amber-700 text-white' : 'bg-amber-200 text-amber-900'
+                        }`}>
+                          Limite: {oilStatus.limitKm} KM
+                        </span>
+                      </div>
+
+                      <div className="text-xs space-y-1.5">
+                        <p className={oilStatus.isOverdue ? 'text-yellow-100 font-semibold' : 'text-slate-700 font-semibold'}>
+                          Acumulado desde a última troca: <strong>{oilStatus.kmDriven} KM</strong>
+                          {currentTripKm > 0 && (
+                            <span> + Viagem atual (<strong>{currentTripKm} KM</strong>) = Total: <strong className="underline">{oilStatus.totalKmWithTrip} KM</strong></span>
+                          )}
+                        </p>
+
+                        <div className="w-full bg-black/10 h-2 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              oilStatus.isOverdue ? 'bg-yellow-300' : oilStatus.percentage >= 80 ? 'bg-amber-500' : 'bg-emerald-500'
+                            }`}
+                            style={{ width: `${oilStatus.percentage}%` }}
+                          />
+                        </div>
+
+                        {oilStatus.lastChangeDate && (
+                          <p className={`text-[10px] ${oilStatus.isOverdue ? 'text-yellow-100' : 'text-slate-500'}`}>
+                            📅 Última troca registrada em: {oilStatus.lastChangeDate}
+                          </p>
+                        )}
+
+                        {oilStatus.isOverdue && (
+                          <p className="text-xs font-black text-yellow-100 pt-1 leading-relaxed">
+                            🚨 ALERTA: Ao finalizar este checklist, o veículo acumulará {oilStatus.totalKmWithTrip} KM rodados, ultrapassando o limite de {oilStatus.limitKm} KM para troca de óleo e filtro! Favor notificar a coordenação.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <label htmlFor="chk-vehicle" className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">
                       Selecione o Veículo / Ambulância

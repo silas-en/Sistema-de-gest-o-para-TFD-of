@@ -241,7 +241,7 @@ async function startServer() {
       return res.status(403).json({ error: 'Permissão negada para cadastrar veículos' });
     }
 
-    const { type, plate, model, brand, maxPassengers, vagasAcamados } = req.body;
+    const { type, plate, model, brand, maxPassengers, vagasAcamados, limiteKmTrocaOleo, ultimoKmTrocaOleo } = req.body;
     if (!type || !plate || !model || !brand || !maxPassengers) {
       return res.status(400).json({ error: 'Todos os campos são obrigatórios para o cadastro de veículos' });
     }
@@ -253,11 +253,81 @@ async function startServer() {
       model,
       brand,
       maxPassengers: Number(maxPassengers),
-      vagasAcamados: type === 'Ambulância' ? (Number(vagasAcamados) || 1) : undefined
+      vagasAcamados: type === 'Ambulância' ? (Number(vagasAcamados) || 1) : undefined,
+      limiteKmTrocaOleo: limiteKmTrocaOleo !== undefined && limiteKmTrocaOleo !== '' ? Number(limiteKmTrocaOleo) : 1000,
+      ultimoKmTrocaOleo: ultimoKmTrocaOleo !== undefined && ultimoKmTrocaOleo !== '' ? Number(ultimoKmTrocaOleo) : 0
     };
 
     DatabaseManager.saveVehicle(newVehicle);
     res.status(201).json(newVehicle);
+  });
+
+  app.put('/api/vehicles/:id', (req, res) => {
+    const user = getRequestUser(req);
+    if (!user || (user.profile !== 'Administrador' && user.profile !== 'Coordenador')) {
+      return res.status(403).json({ error: 'Permissão negada para atualizar veículos' });
+    }
+
+    const vehicleId = req.params.id;
+    const vehicles = DatabaseManager.getVehicles();
+    const existing = vehicles.find(v => v.id === vehicleId);
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Veículo não encontrado' });
+    }
+
+    const { type, plate, model, brand, maxPassengers, vagasAcamados, limiteKmTrocaOleo, ultimoKmTrocaOleo } = req.body;
+
+    const updatedVehicle: Vehicle = {
+      ...existing,
+      type: type || existing.type,
+      plate: plate || existing.plate,
+      model: model || existing.model,
+      brand: brand || existing.brand,
+      maxPassengers: maxPassengers !== undefined ? Number(maxPassengers) : existing.maxPassengers,
+      vagasAcamados: (type || existing.type) === 'Ambulância' ? (vagasAcamados !== undefined ? Number(vagasAcamados) : (existing.vagasAcamados || 1)) : undefined,
+      limiteKmTrocaOleo: limiteKmTrocaOleo !== undefined && limiteKmTrocaOleo !== '' ? Number(limiteKmTrocaOleo) : existing.limiteKmTrocaOleo,
+      ultimoKmTrocaOleo: ultimoKmTrocaOleo !== undefined && ultimoKmTrocaOleo !== '' ? Number(ultimoKmTrocaOleo) : existing.ultimoKmTrocaOleo
+    };
+
+    DatabaseManager.saveVehicle(updatedVehicle);
+    res.json(updatedVehicle);
+  });
+
+  app.post('/api/vehicles/:id/oil-change', (req, res) => {
+    const user = getRequestUser(req);
+    if (!user || (user.profile !== 'Administrador' && user.profile !== 'Coordenador')) {
+      return res.status(403).json({ error: 'Permissão negada para registrar troca de óleo' });
+    }
+
+    const vehicleId = req.params.id;
+    const vehicles = DatabaseManager.getVehicles();
+    const existing = vehicles.find(v => v.id === vehicleId);
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Veículo não encontrado' });
+    }
+
+    // Set dataUltimaTrocaOleo to current timestamp and reference KM
+    const checklists = DatabaseManager.getChecklists().filter(c => c.vehicleId === vehicleId || (c.vehicleModelPlate && existing.plate && c.vehicleModelPlate.includes(existing.plate)));
+    const maxChecklistKm = checklists.reduce((max, c) => Math.max(max, Number(c.finalKm) || 0), 0);
+    const newOilChangeKm = req.body.km !== undefined && req.body.km !== '' ? Number(req.body.km) : (maxChecklistKm > (existing.ultimoKmTrocaOleo || 0) ? maxChecklistKm : (existing.ultimoKmTrocaOleo || 0));
+
+    existing.dataUltimaTrocaOleo = req.body.date || new Date().toISOString();
+    existing.ultimoKmTrocaOleo = newOilChangeKm;
+    DatabaseManager.saveVehicle(existing);
+    res.json({ message: 'Troca de óleo e filtro registrada com sucesso!', vehicle: existing });
+  });
+
+  app.delete('/api/vehicles/:id', (req, res) => {
+    const user = getRequestUser(req);
+    if (!user || user.profile !== 'Administrador') {
+      return res.status(403).json({ error: 'Apenas administradores podem excluir veículos' });
+    }
+
+    const vehicleId = req.params.id;
+    DatabaseManager.deleteVehicle(vehicleId);
+    res.json({ message: 'Veículo excluído com sucesso' });
   });
 
   // Motoristas endpoints

@@ -261,6 +261,9 @@ export class DatabaseManager {
               ALTER TABLE tfd_schedules ADD COLUMN IF NOT EXISTS driver_id VARCHAR(255);
               ALTER TABLE tfd_schedules ADD COLUMN IF NOT EXISTS return_driver_id VARCHAR(255);
               ALTER TABLE tfd_schedules ADD COLUMN IF NOT EXISTS trip_type VARCHAR(50) DEFAULT 'ida_e_volta';
+              ALTER TABLE tfd_vehicles ADD COLUMN IF NOT EXISTS limite_km_troca_oleo INTEGER;
+              ALTER TABLE tfd_vehicles ADD COLUMN IF NOT EXISTS ultimo_km_troca_oleo INTEGER;
+              ALTER TABLE tfd_vehicles ADD COLUMN IF NOT EXISTS data_ultima_troca_oleo VARCHAR(255);
             `);
             await dbPool.query(`
               CREATE TABLE IF NOT EXISTS tfd_history_logs (
@@ -355,9 +358,9 @@ export class DatabaseManager {
               }
               for (const v of dbState.vehicles) {
                 await dbPool.query(
-                  `INSERT INTO tfd_vehicles (id, type, plate, model, brand, max_passengers)
-                   VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
-                  [v.id, v.type, v.plate, v.model, v.brand, v.maxPassengers]
+                  `INSERT INTO tfd_vehicles (id, type, plate, model, brand, max_passengers, limite_km_troca_oleo, ultimo_km_troca_oleo, data_ultima_troca_oleo)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING`,
+                  [v.id, v.type, v.plate, v.model, v.brand, v.maxPassengers, v.limiteKmTrocaOleo || null, v.ultimoKmTrocaOleo ?? 0, v.dataUltimaTrocaOleo || null]
                 );
               }
               for (const d of dbState.drivers) {
@@ -450,7 +453,11 @@ export class DatabaseManager {
                 plate: r.plate,
                 model: r.model,
                 brand: r.brand,
-                maxPassengers: r.max_passengers
+                maxPassengers: r.max_passengers,
+                vagasAcamados: r.vagas_acamados ? Number(r.vagas_acamados) : undefined,
+                limiteKmTrocaOleo: r.limite_km_troca_oleo !== null && r.limite_km_troca_oleo !== undefined ? Number(r.limite_km_troca_oleo) : undefined,
+                ultimoKmTrocaOleo: r.ultimo_km_troca_oleo !== null && r.ultimo_km_troca_oleo !== undefined ? Number(r.ultimo_km_troca_oleo) : 0,
+                dataUltimaTrocaOleo: r.data_ultima_troca_oleo || undefined,
               }));
 
               // Load drivers
@@ -696,16 +703,29 @@ export class DatabaseManager {
 
     if (pool) {
       pool.query(
-        `INSERT INTO tfd_vehicles (id, type, plate, model, brand, max_passengers)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO tfd_vehicles (id, type, plate, model, brand, max_passengers, limite_km_troca_oleo, ultimo_km_troca_oleo, data_ultima_troca_oleo)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (id) DO UPDATE SET
            type = EXCLUDED.type,
            plate = EXCLUDED.plate,
            model = EXCLUDED.model,
            brand = EXCLUDED.brand,
-           max_passengers = EXCLUDED.max_passengers`,
-        [vehicle.id, vehicle.type, vehicle.plate, vehicle.model, vehicle.brand, vehicle.maxPassengers]
+           max_passengers = EXCLUDED.max_passengers,
+           limite_km_troca_oleo = EXCLUDED.limite_km_troca_oleo,
+           ultimo_km_troca_oleo = EXCLUDED.ultimo_km_troca_oleo,
+           data_ultima_troca_oleo = EXCLUDED.data_ultima_troca_oleo`,
+        [vehicle.id, vehicle.type, vehicle.plate, vehicle.model, vehicle.brand, vehicle.maxPassengers, vehicle.limiteKmTrocaOleo || null, vehicle.ultimoKmTrocaOleo ?? 0, vehicle.dataUltimaTrocaOleo || null]
       ).catch(e => console.error('PostgreSQL saveVehicle failed:', e));
+    } else {
+      this.syncToFile();
+    }
+  }
+
+  public static deleteVehicle(id: string): void {
+    dbState.vehicles = dbState.vehicles.filter((v: Vehicle) => v.id !== id);
+    if (pool) {
+      pool.query('DELETE FROM tfd_vehicles WHERE id = $1', [id])
+        .catch(e => console.error('PostgreSQL deleteVehicle failed:', e));
     } else {
       this.syncToFile();
     }
@@ -879,16 +899,6 @@ export class DatabaseManager {
     if (pool) {
       pool.query('DELETE FROM tfd_schedules WHERE id = $1', [id])
         .catch(e => console.error('PostgreSQL deleteSchedule failed:', e));
-    } else {
-      this.syncToFile();
-    }
-  }
-
-  public static deleteVehicle(id: string): void {
-    dbState.vehicles = dbState.vehicles.filter((v: Vehicle) => v.id !== id);
-    if (pool) {
-      pool.query('DELETE FROM tfd_vehicles WHERE id = $1', [id])
-        .catch(e => console.error('PostgreSQL deleteVehicle failed:', e));
     } else {
       this.syncToFile();
     }

@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Car, Fuel, Tag, Settings2, Users2, AlertCircle, Sparkles, CheckCircle2, Trash2 } from 'lucide-react';
-import { Vehicle, VehicleType, UserProfile } from '../types.js';
+import { Vehicle, VehicleType, UserProfile, VehicleChecklist } from '../types.js';
+import { getOilMaintenanceStatus } from '../utils/oilChange.js';
 import ConfirmDialog from './ConfirmDialog.js';
 
 interface VehiclesSectionProps {
@@ -15,6 +16,7 @@ interface VehiclesSectionProps {
 
 export default function VehiclesSection({ currentUserId, userProfile }: VehiclesSectionProps) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [checklists, setChecklists] = useState<VehicleChecklist[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -38,6 +40,8 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
   const [brand, setBrand] = useState('');
   const [maxPassengers, setMaxPassengers] = useState(4);
   const [vagasAcamados, setVagasAcamados] = useState(1);
+  const [limiteKmTrocaOleo, setLimiteKmTrocaOleo] = useState(1000);
+  const [ultimoKmTrocaOleo, setUltimoKmTrocaOleo] = useState(0);
 
   const isAuthorized = userProfile === 'Administrador' || userProfile === 'Coordenador';
 
@@ -45,14 +49,20 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/vehicles', {
-        headers: { 'x-user-id': currentUserId }
-      });
-      if (!response.ok) {
+      const [vRes, cRes] = await Promise.all([
+        fetch('/api/vehicles', { headers: { 'x-user-id': currentUserId } }),
+        fetch('/api/checklists', { headers: { 'x-user-id': currentUserId } })
+      ]);
+      if (!vRes.ok) {
         throw new Error('Falha ao obter lista de veículos');
       }
-      const data = await response.json();
+      const data = await vRes.json();
       setVehicles(data);
+
+      if (cRes.ok) {
+        const cData = await cRes.json();
+        setChecklists(cData);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -92,7 +102,9 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
           model: model.trim(),
           brand: brand.trim(),
           maxPassengers,
-          vagasAcamados: type === 'Ambulância' ? vagasAcamados : undefined
+          vagasAcamados: type === 'Ambulância' ? vagasAcamados : undefined,
+          limiteKmTrocaOleo: Number(limiteKmTrocaOleo) || 1000,
+          ultimoKmTrocaOleo: Number(ultimoKmTrocaOleo) || 0
         })
       });
 
@@ -109,6 +121,8 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
       setBrand('');
       setMaxPassengers(type === 'Carro de pequeno porte' ? 4 : type === 'Carro de grande porte' ? 15 : 2);
       setVagasAcamados(1);
+      setLimiteKmTrocaOleo(1000);
+      setUltimoKmTrocaOleo(0);
 
       fetchVehicles();
     } catch (e: any) {
@@ -124,6 +138,38 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
       setMaxPassengers(2);
       setVagasAcamados(1);
     }
+  };
+
+  const handleRecordOilChange = (vehicleId: string, modelPlate: string) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Registrar Troca de Óleo e Filtro',
+      message: `Deseja registrar que a troca de óleo e filtro do veículo ${modelPlate} foi realizada? Isso atualizará o KM de referência e reiniciará a contagem do alerta de manutenção.`,
+      type: 'info',
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        setError(null);
+        setSuccess(null);
+        try {
+          const response = await fetch(`/api/vehicles/${vehicleId}/oil-change`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-id': currentUserId
+            },
+            body: JSON.stringify({})
+          });
+          if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || 'Falha ao registrar troca de óleo');
+          }
+          setSuccess(`Troca de óleo e filtro registrada com sucesso para ${modelPlate}!`);
+          fetchVehicles();
+        } catch (e: any) {
+          setError(e.message);
+        }
+      }
+    });
   };
 
   const handleDelete = async (id: string) => {
@@ -302,6 +348,42 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
                   </div>
                 )}
 
+                {/* Limite de Quilometragem para Troca de Óleo e Filtro */}
+                <div className="bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200 space-y-1.5">
+                  <label htmlFor="veh-oil-limit" className="block text-xs font-extrabold text-amber-900 uppercase tracking-wider">
+                    🛢️ Limite de KM para Troca de Óleo e Filtro
+                  </label>
+                  <p className="text-[10px] text-amber-800 font-medium">
+                    Exemplo: 1000 KM. A cada 1000 km rodados, o sistema acenderá o alerta de manutenção no checklist do motorista e nos relatórios da coordenação.
+                  </p>
+                  <input
+                    id="veh-oil-limit"
+                    type="number"
+                    required
+                    min={100}
+                    step={100}
+                    value={limiteKmTrocaOleo}
+                    onChange={(e) => setLimiteKmTrocaOleo(Number(e.target.value))}
+                    className="block w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl text-slate-950 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                  />
+                </div>
+
+                {/* KM da Última Troca de Óleo */}
+                <div>
+                  <label htmlFor="veh-last-oil" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                    KM da Última Troca de Óleo (Ponto Inicial)
+                  </label>
+                  <input
+                    id="veh-last-oil"
+                    type="number"
+                    min={0}
+                    value={ultimoKmTrocaOleo}
+                    onChange={(e) => setUltimoKmTrocaOleo(Number(e.target.value))}
+                    className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    placeholder="0"
+                  />
+                </div>
+
                 <button
                   id="veh-submit"
                   type="submit"
@@ -375,6 +457,68 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
                           <span>Vagas para Acamados: <strong>{v.vagasAcamados ?? 1} maca(s)/leito(s)</strong></span>
                         </div>
                       )}
+                      {(() => {
+                        const oilStatus = getOilMaintenanceStatus(v, checklists);
+                        return (
+                          <div className={`p-3 rounded-xl border space-y-2 text-xs transition-all ${
+                            oilStatus.isOverdue
+                              ? 'bg-amber-100/90 border-amber-300 ring-2 ring-amber-400'
+                              : 'bg-amber-50/80 border-amber-200'
+                          }`}>
+                            <div className="flex items-center justify-between text-amber-950 font-extrabold">
+                              <span className="flex items-center space-x-1">
+                                <span>🛢️ Troca de Óleo e Filtro</span>
+                              </span>
+                              <span className="bg-amber-200 text-amber-900 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
+                                Limite: {oilStatus.limitKm} KM
+                              </span>
+                            </div>
+
+                            <div>
+                              <div className="flex justify-between items-center text-[11px] text-slate-700 font-semibold mb-1">
+                                <span>Acumulado desde a última troca:</span>
+                                <span className={`font-mono font-bold ${oilStatus.isOverdue ? 'text-amber-950 font-black' : 'text-slate-900'}`}>
+                                  {oilStatus.kmDriven} / {oilStatus.limitKm} KM
+                                </span>
+                              </div>
+                              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full transition-all duration-300 ${
+                                    oilStatus.isOverdue
+                                      ? 'bg-amber-600'
+                                      : oilStatus.percentage >= 80
+                                      ? 'bg-amber-500'
+                                      : 'bg-emerald-500'
+                                  }`}
+                                  style={{ width: `${oilStatus.percentage}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {oilStatus.lastChangeDate && (
+                              <p className="text-[10px] text-slate-600 font-medium">
+                                📅 Última troca realizada em: <strong>{oilStatus.lastChangeDate}</strong>
+                              </p>
+                            )}
+
+                            {oilStatus.isOverdue && (
+                              <div className="p-2 bg-amber-500 text-white font-black text-[10px] uppercase rounded-lg shadow-xs flex items-center space-x-1">
+                                <span>⚠️ ALERTA: MANUTENÇÃO VENCIDA ({oilStatus.kmDriven} / {oilStatus.limitKm} KM)</span>
+                              </div>
+                            )}
+
+                            {isAuthorized && (
+                              <button
+                                type="button"
+                                onClick={() => handleRecordOilChange(v.id, `${v.model} (${v.plate})`)}
+                                className="mt-1 w-full py-2 px-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all flex items-center justify-center space-x-1 cursor-pointer shadow-xs"
+                              >
+                                <span>🔄 Registrar Troca de Óleo Realizada Hoje</span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

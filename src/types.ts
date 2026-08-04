@@ -26,6 +26,9 @@ export interface Vehicle {
   brand: string;
   maxPassengers: number;
   vagasAcamados?: number;
+  limiteKmTrocaOleo?: number;
+  ultimoKmTrocaOleo?: number;
+  dataUltimaTrocaOleo?: string;
 }
 
 export interface Driver {

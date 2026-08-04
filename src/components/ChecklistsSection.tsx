@@ -5,7 +5,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { ClipboardList, Search, Trash2, Calendar, FileText, CheckCircle2, AlertCircle, Printer, X, Eye, ChevronDown, ChevronUp, Camera, Maximize2, Users, Filter, RotateCcw } from 'lucide-react';
-import { VehicleChecklist, UserProfile } from '../types.js';
+import { VehicleChecklist, UserProfile, Vehicle } from '../types.js';
+import { getOilMaintenanceStatus } from '../utils/oilChange.js';
 import ConfirmDialog from './ConfirmDialog.js';
 
 interface ChecklistsSectionProps {
@@ -15,6 +16,7 @@ interface ChecklistsSectionProps {
 
 export default function ChecklistsSection({ currentUserId, userProfile }: ChecklistsSectionProps) {
   const [checklists, setChecklists] = useState<VehicleChecklist[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,9 +71,53 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
     }
   };
 
+  const fetchVehicles = async () => {
+    try {
+      const response = await fetch('/api/vehicles', {
+        headers: { 'x-user-id': currentUserId }
+      });
+      if (response.ok) {
+        const vData = await response.json();
+        setVehicles(vData);
+      }
+    } catch (e) {
+      console.error('Erro ao buscar veículos:', e);
+    }
+  };
+
   useEffect(() => {
     fetchChecklists();
+    fetchVehicles();
   }, [currentUserId]);
+
+  const handleRecordOilChange = (vehicleId: string, modelPlate: string) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Registrar Troca de Óleo e Filtro',
+      message: `Confirma que a troca de óleo e filtro do veículo ${modelPlate} foi realizada? Isso redefinirá os alertas de manutenção.`,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        try {
+          const res = await fetch(`/api/vehicles/${vehicleId}/oil-change`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-id': currentUserId
+            },
+            body: JSON.stringify({})
+          });
+          if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.error || 'Falha ao registrar troca de óleo');
+          }
+          await fetchVehicles();
+          await fetchChecklists();
+        } catch (err: any) {
+          alert(err.message);
+        }
+      }
+    });
+  };
 
   const handleDelete = (id: string) => {
     setConfirmConfig({
@@ -132,6 +178,11 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
 
   const isAnyFilterActive = Boolean(searchTerm || selectedVehicle || selectedDriver || selectedDate);
 
+  const overdueVehicles = vehicles.filter(v => {
+    const status = getOilMaintenanceStatus(v, checklists);
+    return status.isOverdue;
+  });
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
@@ -167,6 +218,51 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
           <span>{filteredChecklists.length} checklist(s) exibido(s)</span>
         </div>
       </div>
+
+      {/* Fleet Oil Maintenance Alert Banner */}
+      {overdueVehicles.length > 0 && (
+        <div className="bg-amber-500 text-white p-4 rounded-2xl shadow-lg border-2 border-amber-600 space-y-3 animate-fadeIn">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="h-6 w-6 text-yellow-100 shrink-0" />
+            <h3 className="text-sm font-black uppercase tracking-wider text-yellow-100">
+              🚨 PAINEL DE ALERTA: {overdueVehicles.length} VEÍCULO(S) REQUEREM TROCA DE ÓLEO E FILTRO!
+            </h3>
+          </div>
+          <p className="text-xs text-yellow-100 font-medium">
+            Abaixo estão os veículos que ultrapassaram a limite de quilometragem estabelecido desde a última troca de óleo:
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {overdueVehicles.map(v => {
+              const status = getOilMaintenanceStatus(v, checklists);
+              const canManageOil = userProfile === 'Administrador' || userProfile === 'Coordenador';
+
+              return (
+                <div key={v.id} className="bg-amber-600/90 border border-amber-400 p-3 rounded-xl flex flex-col justify-between space-y-2 shadow-sm">
+                  <div>
+                    <p className="text-xs font-black text-white">{v.brand} {v.model} ({v.plate})</p>
+                    <p className="text-[11px] text-yellow-100 mt-1">
+                      Rodou <strong>{status.kmDriven} KM</strong> desde a última troca (Limite: <strong>{status.limitKm} KM</strong>)
+                    </p>
+                  </div>
+                  {canManageOil ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRecordOilChange(v.id, `${v.model} (${v.plate})`)}
+                      className="w-full py-1.5 bg-yellow-400 hover:bg-yellow-300 text-amber-950 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center space-x-1 cursor-pointer shadow-xs"
+                    >
+                      <span>🔄 Registrar Troca Realizada Hoje</span>
+                    </button>
+                  ) : (
+                    <div className="text-[10px] bg-amber-700 text-yellow-100 px-2 py-1 rounded-lg font-bold text-center">
+                      ⚠️ Notificar Administração para realizar troca
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">
@@ -281,25 +377,38 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
             const okCount = items.filter(Boolean).length;
             const pendenteCount = items.length - okCount;
 
+            const matchedVeh = vehicles.find(v => v.id === chk.vehicleId || chk.vehicleModelPlate.includes(v.plate));
+            const oilStatus = matchedVeh ? getOilMaintenanceStatus(matchedVeh, checklists) : null;
+            const isOilOverdue = Boolean(oilStatus?.isOverdue || chk.oleo === false);
+            const kmSinceLastOil = oilStatus?.kmDriven || 0;
+            const limitKm = oilStatus?.limitKm || 1000;
+
             return (
-              <div key={chk.id} className="bg-white border border-slate-100 rounded-2xl shadow-sm hover:border-blue-150 transition-all overflow-hidden">
+              <div key={chk.id} className={`bg-white border rounded-2xl shadow-sm transition-all overflow-hidden ${
+                isOilOverdue ? 'border-amber-300 ring-1 ring-amber-400' : 'border-slate-100 hover:border-blue-150'
+              }`}>
                 {/* Header Summary */}
                 <div 
                   className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/50"
                   onClick={() => setExpandedId(isExpanded ? null : chk.id)}
                 >
                   <div className="flex items-start space-x-3">
-                    <div className="bg-slate-100 p-2.5 rounded-xl text-slate-600 shrink-0">
+                    <div className={`p-2.5 rounded-xl shrink-0 ${isOilOverdue ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
                       <FileText className="h-5 w-5" />
                     </div>
                     <div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                         <span className="text-xs bg-blue-50 text-blue-800 font-bold px-2.5 py-0.5 rounded-full">
                           {formattedDate}
                         </span>
                         <span className="text-xs font-mono text-slate-400">
                           {new Date(chk.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </span>
+                        {isOilOverdue && (
+                          <span className="text-[10px] bg-amber-500 text-white font-extrabold px-2 py-0.5 rounded-full flex items-center space-x-1 shadow-xs">
+                            <span>🚨 ALERTA TROCA DE ÓLEO ({kmSinceLastOil}/{limitKm} KM)</span>
+                          </span>
+                        )}
                       </div>
                       <h4 className="text-sm font-bold text-slate-900 mt-1">{chk.vehicleModelPlate}</h4>
                       <p className="text-xs text-slate-500 mt-0.5">
