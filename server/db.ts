@@ -225,6 +225,7 @@ export class DatabaseManager {
               CREATE TABLE IF NOT EXISTS tfd_schedules (
                 id VARCHAR(255) PRIMARY KEY,
                 patient_name VARCHAR(255) NOT NULL,
+                patient_cpf VARCHAR(50),
                 start_date VARCHAR(50) NOT NULL,
                 end_date VARCHAR(50) NOT NULL,
                 vehicle_id VARCHAR(255) NOT NULL,
@@ -246,6 +247,7 @@ export class DatabaseManager {
               );
             `);
             await dbPool.query(`
+              ALTER TABLE tfd_schedules ADD COLUMN IF NOT EXISTS patient_cpf VARCHAR(50);
               ALTER TABLE tfd_schedules ADD COLUMN IF NOT EXISTS is_deletion_pending BOOLEAN DEFAULT FALSE;
               ALTER TABLE tfd_schedules ADD COLUMN IF NOT EXISTS deletion_requested_at VARCHAR(255);
               ALTER TABLE tfd_schedules ADD COLUMN IF NOT EXISTS deletion_requested_by_user_id VARCHAR(255);
@@ -269,6 +271,7 @@ export class DatabaseManager {
               CREATE TABLE IF NOT EXISTS tfd_history_logs (
                 id VARCHAR(255) PRIMARY KEY,
                 patient_name VARCHAR(255) NOT NULL,
+                patient_cpf VARCHAR(50),
                 start_date VARCHAR(50) NOT NULL,
                 end_date VARCHAR(50) NOT NULL,
                 vehicle_details VARCHAR(255) NOT NULL,
@@ -278,6 +281,7 @@ export class DatabaseManager {
                 completed_at VARCHAR(255) NOT NULL,
                 completed_by_user_name VARCHAR(255) NOT NULL
               );
+              ALTER TABLE tfd_history_logs ADD COLUMN IF NOT EXISTS patient_cpf VARCHAR(50);
             `);
             await dbPool.query(`
               CREATE TABLE IF NOT EXISTS tfd_settings (
@@ -293,7 +297,7 @@ export class DatabaseManager {
                 vehicle_model_plate VARCHAR(255) NOT NULL,
                 date VARCHAR(50) NOT NULL,
                 initial_km INTEGER NOT NULL,
-                final_km INTEGER NOT NULL,
+                final_km INTEGER,
                 oleo BOOLEAN NOT NULL,
                 agua BOOLEAN NOT NULL,
                 oxigenio BOOLEAN NOT NULL,
@@ -316,6 +320,28 @@ export class DatabaseManager {
                 driver_user_name VARCHAR(255) NOT NULL,
                 created_at VARCHAR(255) NOT NULL
               );
+              ALTER TABLE tfd_checklists ALTER COLUMN final_km DROP NOT NULL;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS status VARCHAR(50);
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS combustivel_inicial VARCHAR(50);
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS foto_painel_combustivel_inicial TEXT;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS foto_frente TEXT;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS foto_fundo TEXT;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS foto_lateral_esquerda TEXT;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS foto_lateral_direita TEXT;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS foto_km_final TEXT;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS combustivel_final VARCHAR(50);
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS foto_painel_combustivel_final TEXT;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS houve_abastecimento BOOLEAN;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS abastecimento_litros NUMERIC;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS abastecimento_valor NUMERIC;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS abastecimento_posto VARCHAR(255);
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS abastecimento_comprovante_foto TEXT;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS houve_incidente BOOLEAN;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS descricao_incidente TEXT;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS foto_incidente TEXT;
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS retorno_horario VARCHAR(50);
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS retorno_data VARCHAR(50);
+              ALTER TABLE tfd_checklists ADD COLUMN IF NOT EXISTS completed_at VARCHAR(255);
             `);
 
             // Verify if we already have rows in tfd_users (seed check)
@@ -379,11 +405,12 @@ export class DatabaseManager {
               }
               for (const s of dbState.schedules) {
                 await dbPool.query(
-                  `INSERT INTO tfd_schedules (id, patient_name, start_date, end_date, vehicle_id, return_vehicle_id, driver_id, return_driver_id, hospital_id, request_type, recurrent_type_details, created_by_user_id, created_by_user_name, created_at, companion_name, companion_phone_1, companion_phone_2, confirmation_status, confirmation_updated_by, confirmation_updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) ON CONFLICT DO NOTHING`,
+                  `INSERT INTO tfd_schedules (id, patient_name, patient_cpf, start_date, end_date, vehicle_id, return_vehicle_id, driver_id, return_driver_id, hospital_id, request_type, recurrent_type_details, created_by_user_id, created_by_user_name, created_at, companion_name, companion_phone_1, companion_phone_2, confirmation_status, confirmation_updated_by, confirmation_updated_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) ON CONFLICT DO NOTHING`,
                   [
                     s.id,
                     s.patientName,
+                    s.patientCpf || null,
                     s.startDate,
                     s.endDate,
                     s.vehicleId,
@@ -407,11 +434,12 @@ export class DatabaseManager {
               }
               for (const log of dbState.history) {
                 await dbPool.query(
-                  `INSERT INTO tfd_history_logs (id, patient_name, start_date, end_date, vehicle_details, hospital_name, request_type, created_by_user_name, completed_at, completed_by_user_name)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING`,
+                  `INSERT INTO tfd_history_logs (id, patient_name, patient_cpf, start_date, end_date, vehicle_details, hospital_name, request_type, created_by_user_name, completed_at, completed_by_user_name)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT DO NOTHING`,
                   [
                     log.id,
                     log.patientName,
+                    log.patientCpf || null,
                     log.startDate,
                     log.endDate,
                     log.vehicleDetails,
@@ -491,6 +519,7 @@ export class DatabaseManager {
               dbState.schedules = schedulesRows.map(r => ({
                 id: r.id,
                 patientName: r.patient_name,
+                patientCpf: r.patient_cpf || '',
                 startDate: r.start_date,
                 endDate: r.end_date,
                 tripType: r.trip_type || 'ida_e_volta',
@@ -522,6 +551,7 @@ export class DatabaseManager {
               dbState.history = historyRows.map(r => ({
                 id: r.id,
                 patientName: r.patient_name,
+                patientCpf: r.patient_cpf || undefined,
                 startDate: r.start_date,
                 endDate: r.end_date,
                 vehicleDetails: r.vehicle_details,
@@ -551,8 +581,10 @@ export class DatabaseManager {
                 vehicleId: r.vehicle_id,
                 vehicleModelPlate: r.vehicle_model_plate,
                 date: r.date,
+                status: r.status || (r.final_km !== null && r.final_km !== undefined ? 'concluido' : 'em_andamento'),
                 initialKm: r.initial_km,
-                finalKm: r.final_km,
+                combustivelInicial: r.combustivel_inicial || undefined,
+                fotoPainelCombustivelInicial: r.foto_painel_combustivel_inicial || undefined,
                 oleo: r.oleo === true,
                 agua: r.agua === true,
                 oxigenio: r.oxigenio === true,
@@ -571,6 +603,25 @@ export class DatabaseManager {
                 saidaHorario: r.saida_horario,
                 saidaDestino: r.saida_destino,
                 saidaCidade: r.saida_cidade,
+                fotoFrente: r.foto_frente || undefined,
+                fotoFundo: r.foto_fundo || undefined,
+                fotoLateralEsquerda: r.foto_lateral_esquerda || undefined,
+                fotoLateralDireita: r.foto_lateral_direita || undefined,
+                finalKm: r.final_km !== null && r.final_km !== undefined ? Number(r.final_km) : undefined,
+                fotoKmFinal: r.foto_km_final || undefined,
+                combustivelFinal: r.combustivel_final || undefined,
+                fotoPainelCombustivelFinal: r.foto_painel_combustivel_final || undefined,
+                houveAbastecimento: r.houve_abastecimento === true,
+                abastecimentoLitros: r.abastecimento_litros ? Number(r.abastecimento_litros) : undefined,
+                abastecimentoValor: r.abastecimento_valor ? Number(r.abastecimento_valor) : undefined,
+                abastecimentoPosto: r.abastecimento_posto || undefined,
+                abastecimentoComprovanteFoto: r.abastecimento_comprovante_foto || undefined,
+                houveIncidente: r.houve_incidente === true,
+                descricaoIncidente: r.descricao_incidente || undefined,
+                fotoIncidente: r.foto_incidente || undefined,
+                retornoHorario: r.retorno_horario || undefined,
+                retornoData: r.retorno_data || undefined,
+                completedAt: r.completed_at || undefined,
                 driverUserId: r.driver_user_id,
                 driverUserName: r.driver_user_name,
                 createdAt: r.created_at
@@ -829,15 +880,16 @@ export class DatabaseManager {
      if (pool) {
       pool.query(
         `INSERT INTO tfd_schedules (
-          id, patient_name, start_date, end_date, vehicle_id, return_vehicle_id, driver_id, return_driver_id, hospital_id, request_type, recurrent_type_details, 
+          id, patient_name, patient_cpf, start_date, end_date, vehicle_id, return_vehicle_id, driver_id, return_driver_id, hospital_id, request_type, recurrent_type_details, 
           created_by_user_id, created_by_user_name, created_at, 
           is_deletion_pending, deletion_requested_at, deletion_requested_by_user_id, deletion_requested_by_user_name, deleted_by_admin_name,
           companion_name, companion_phone_1, companion_phone_2,
           confirmation_status, confirmation_updated_by, confirmation_updated_at, trip_type
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
          ON CONFLICT (id) DO UPDATE SET
            patient_name = EXCLUDED.patient_name,
+           patient_cpf = EXCLUDED.patient_cpf,
            start_date = EXCLUDED.start_date,
            end_date = EXCLUDED.end_date,
            vehicle_id = EXCLUDED.vehicle_id,
@@ -858,10 +910,11 @@ export class DatabaseManager {
            companion_name = EXCLUDED.companion_name,
            companion_phone_1 = EXCLUDED.companion_phone_1, confirmation_status = EXCLUDED.confirmation_status, confirmation_updated_by = EXCLUDED.confirmation_updated_by, confirmation_updated_at = EXCLUDED.confirmation_updated_at,
            companion_phone_2 = EXCLUDED.companion_phone_2,
-            trip_type = EXCLUDED.trip_type`,
+           trip_type = EXCLUDED.trip_type`,
         [
           schedule.id,
           schedule.patientName,
+          schedule.patientCpf || null,
           schedule.startDate,
           schedule.endDate,
           schedule.vehicleId,
@@ -885,7 +938,7 @@ export class DatabaseManager {
           schedule.confirmationStatus || 'pendente',
           schedule.confirmationUpdatedBy || null,
           schedule.confirmationUpdatedAt || null,
-           schedule.tripType || 'ida_e_volta'
+          schedule.tripType || 'ida_e_volta'
         ]
       ).catch(e => console.error('PostgreSQL saveSchedule failed:', e));
     } else {
@@ -943,10 +996,11 @@ export class DatabaseManager {
 
     if (pool) {
       pool.query(
-        `INSERT INTO tfd_history_logs (id, patient_name, start_date, end_date, vehicle_details, hospital_name, request_type, created_by_user_name, completed_at, completed_by_user_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO tfd_history_logs (id, patient_name, patient_cpf, start_date, end_date, vehicle_details, hospital_name, request_type, created_by_user_name, completed_at, completed_by_user_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (id) DO UPDATE SET
            patient_name = EXCLUDED.patient_name,
+           patient_cpf = EXCLUDED.patient_cpf,
            start_date = EXCLUDED.start_date,
            end_date = EXCLUDED.end_date,
            vehicle_details = EXCLUDED.vehicle_details,
@@ -958,6 +1012,7 @@ export class DatabaseManager {
         [
           log.id,
           log.patientName,
+          log.patientCpf || null,
           log.startDate,
           log.endDate,
           log.vehicleDetails,
@@ -1019,20 +1074,37 @@ export class DatabaseManager {
     if (pool) {
       pool.query(
         `INSERT INTO tfd_checklists (
-          id, vehicle_id, vehicle_model_plate, date, initial_km, final_km,
+          id, vehicle_id, vehicle_model_plate, date, status, initial_km,
+          combustivel_inicial, foto_painel_combustivel_inicial,
           oleo, agua, oxigenio, parabrisa, luz_re, ar_condicionado, documento,
           piscas, retrovisores, sirene, marcador_combustivel, chave_rodas, macaco,
           buzina, farois, saida_horario, saida_destino, saida_cidade,
+          foto_frente, foto_fundo, foto_lateral_esquerda, foto_lateral_direita,
+          final_km, foto_km_final, combustivel_final, foto_painel_combustivel_final,
+          houve_abastecimento, abastecimento_litros, abastecimento_valor, abastecimento_posto, abastecimento_comprovante_foto,
+          houve_incidente, descricao_incidente, foto_incidente,
+          retorno_horario, retorno_data, completed_at,
           driver_user_id, driver_user_name, created_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-          $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+          $1, $2, $3, $4, $5, $6,
+          $7, $8,
+          $9, $10, $11, $12, $13, $14, $15,
+          $16, $17, $18, $19, $20, $21,
+          $22, $23, $24, $25, $26,
+          $27, $28, $29, $30,
+          $31, $32, $33, $34,
+          $35, $36, $37, $38, $39,
+          $40, $41, $42,
+          $43, $44, $45,
+          $46, $47, $48
         ) ON CONFLICT (id) DO UPDATE SET
           vehicle_id = EXCLUDED.vehicle_id,
           vehicle_model_plate = EXCLUDED.vehicle_model_plate,
           date = EXCLUDED.date,
+          status = EXCLUDED.status,
           initial_km = EXCLUDED.initial_km,
-          final_km = EXCLUDED.final_km,
+          combustivel_inicial = EXCLUDED.combustivel_inicial,
+          foto_painel_combustivel_inicial = EXCLUDED.foto_painel_combustivel_inicial,
           oleo = EXCLUDED.oleo,
           agua = EXCLUDED.agua,
           oxigenio = EXCLUDED.oxigenio,
@@ -1051,14 +1123,50 @@ export class DatabaseManager {
           saida_horario = EXCLUDED.saida_horario,
           saida_destino = EXCLUDED.saida_destino,
           saida_cidade = EXCLUDED.saida_cidade,
+          foto_frente = EXCLUDED.foto_frente,
+          foto_fundo = EXCLUDED.foto_fundo,
+          foto_lateral_esquerda = EXCLUDED.foto_lateral_esquerda,
+          foto_lateral_direita = EXCLUDED.foto_lateral_direita,
+          final_km = EXCLUDED.final_km,
+          foto_km_final = EXCLUDED.foto_km_final,
+          combustivel_final = EXCLUDED.combustivel_final,
+          foto_painel_combustivel_final = EXCLUDED.foto_painel_combustivel_final,
+          houve_abastecimento = EXCLUDED.houve_abastecimento,
+          abastecimento_litros = EXCLUDED.abastecimento_litros,
+          abastecimento_valor = EXCLUDED.abastecimento_valor,
+          abastecimento_posto = EXCLUDED.abastecimento_posto,
+          abastecimento_comprovante_foto = EXCLUDED.abastecimento_comprovante_foto,
+          houve_incidente = EXCLUDED.houve_incidente,
+          descricao_incidente = EXCLUDED.descricao_incidente,
+          foto_incidente = EXCLUDED.foto_incidente,
+          retorno_horario = EXCLUDED.retorno_horario,
+          retorno_data = EXCLUDED.retorno_data,
+          completed_at = EXCLUDED.completed_at,
           driver_user_id = EXCLUDED.driver_user_id,
           driver_user_name = EXCLUDED.driver_user_name,
           created_at = EXCLUDED.created_at`,
         [
-          chk.id, chk.vehicleId, chk.vehicleModelPlate, chk.date, chk.initialKm, chk.finalKm,
+          chk.id, chk.vehicleId, chk.vehicleModelPlate, chk.date, chk.status || 'concluido', chk.initialKm,
+          chk.combustivelInicial || null, chk.fotoPainelCombustivelInicial || null,
           chk.oleo, chk.agua, chk.oxigenio, chk.parabrisa, chk.luzRe, chk.arCondicionado, chk.documento,
           chk.piscas, chk.retrovisores, chk.sirene, chk.marcadorCombustivel, chk.chaveRodas, chk.macaco,
           chk.buzina, chk.farois, chk.saidaHorario, chk.saidaDestino, chk.saidaCidade,
+          chk.fotoFrente || null, chk.fotoFundo || null, chk.fotoLateralEsquerda || null, chk.fotoLateralDireita || null,
+          chk.finalKm !== undefined && chk.finalKm !== null ? chk.finalKm : null,
+          chk.fotoKmFinal || null,
+          chk.combustivelFinal || null,
+          chk.fotoPainelCombustivelFinal || null,
+          chk.houveAbastecimento === true,
+          chk.abastecimentoLitros || null,
+          chk.abastecimentoValor || null,
+          chk.abastecimentoPosto || null,
+          chk.abastecimentoComprovanteFoto || null,
+          chk.houveIncidente === true,
+          chk.descricaoIncidente || null,
+          chk.fotoIncidente || null,
+          chk.retornoHorario || null,
+          chk.retornoData || null,
+          chk.completedAt || null,
           chk.driverUserId, chk.driverUserName, chk.createdAt
         ]
       ).catch(e => console.error('PostgreSQL saveChecklist failed:', e));

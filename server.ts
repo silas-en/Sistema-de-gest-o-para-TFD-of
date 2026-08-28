@@ -9,6 +9,7 @@ import { createServer as createViteServer } from 'vite';
 import jwt from 'jsonwebtoken';
 import { DatabaseManager, getTodayString, DbUser } from './server/db.js';
 import { Vehicle, Driver, Hospital, Schedule, HistoryLog, UserProfile, RequestMedicalType, VehicleChecklist } from './src/types.js';
+import { validateCPF, formatCPF } from './src/utils/cpf.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-tfd-super-secret-key-12345';
 
@@ -20,6 +21,15 @@ async function startServer() {
 
   const app = express();
   app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+  // Disable caching on API endpoints to prevent compression mismatch and decoding issues
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
+  });
 
   // Middleware to authenticate user via 'x-user-id' header
   const getRequestUser = (req: express.Request): DbUser | null => {
@@ -611,6 +621,7 @@ async function startServer() {
         const historyItem: HistoryLog = {
           id: 'history-auto-' + Math.random().toString(36).substr(2, 9),
           patientName: sched.patientName,
+          patientCpf: sched.patientCpf,
           startDate: sched.startDate,
           endDate: sched.endDate,
           vehicleDetails,
@@ -650,6 +661,7 @@ async function startServer() {
           const historyItem: HistoryLog = {
             id: 'history-del-' + Math.random().toString(36).substr(2, 9),
             patientName: sched.patientName,
+            patientCpf: sched.patientCpf,
             startDate: sched.startDate,
             endDate: sched.endDate,
             vehicleDetails,
@@ -693,10 +705,15 @@ async function startServer() {
     const user = getRequestUser(req);
     if (!user) return res.status(401).json({ error: 'Não autorizado' });
 
-    const { patientName, startDate, endDate, tripType, vehicleId, returnVehicleId, driverId, returnDriverId, hospitalId, requestType, recurrentTypeDetails, companionName, companionPhone1, companionPhone2, isBedridden } = req.body;
+    const { patientName, patientCpf, startDate, endDate, tripType, vehicleId, returnVehicleId, driverId, returnDriverId, hospitalId, requestType, recurrentTypeDetails, companionName, companionPhone1, companionPhone2, isBedridden } = req.body;
     
-    if (!patientName || !startDate || !endDate || !vehicleId || !hospitalId || !requestType) {
-      return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos' });
+    if (!patientName || !patientCpf || !startDate || !endDate || !vehicleId || !hospitalId || !requestType) {
+      return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos (incluindo o CPF do paciente)' });
+    }
+
+    const cleanCpf = (patientCpf || '').replace(/\D/g, '');
+    if (!validateCPF(cleanCpf)) {
+      return res.status(400).json({ error: 'O CPF informado para o paciente é inválido. Por favor, digite um CPF válido com 11 dígitos.' });
     }
 
     const vehicles = DatabaseManager.getVehicles();
@@ -790,7 +807,8 @@ async function startServer() {
 
     const newSchedule: Schedule = {
       id: 'schedule-' + Math.random().toString(36).substr(2, 9),
-      patientName,
+      patientName: patientName.trim(),
+      patientCpf: formatCPF(cleanCpf),
       startDate,
       endDate,
       tripType: tripType || 'ida_e_volta',
@@ -830,10 +848,15 @@ async function startServer() {
       return res.status(403).json({ error: 'Permissão negada. Apenas quem criou este agendamento ou um Administrador pode alterá-lo.' });
     }
 
-    const { patientName, startDate, endDate, tripType, vehicleId, returnVehicleId, driverId, returnDriverId, hospitalId, requestType, recurrentTypeDetails, companionName, companionPhone1, companionPhone2, isBedridden } = req.body;
+    const { patientName, patientCpf, startDate, endDate, tripType, vehicleId, returnVehicleId, driverId, returnDriverId, hospitalId, requestType, recurrentTypeDetails, companionName, companionPhone1, companionPhone2, isBedridden } = req.body;
     
-    if (!patientName || !startDate || !endDate || !vehicleId || !hospitalId || !requestType) {
-      return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos' });
+    if (!patientName || !patientCpf || !startDate || !endDate || !vehicleId || !hospitalId || !requestType) {
+      return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos (incluindo o CPF do paciente)' });
+    }
+
+    const cleanCpf = (patientCpf || '').replace(/\D/g, '');
+    if (!validateCPF(cleanCpf)) {
+      return res.status(400).json({ error: 'O CPF informado para o paciente é inválido. Por favor, digite um CPF válido com 11 dígitos.' });
     }
 
     const vehicles = DatabaseManager.getVehicles();
@@ -920,7 +943,8 @@ async function startServer() {
     }
 
     // Update fields
-    existingSched.patientName = patientName;
+    existingSched.patientName = patientName.trim();
+    existingSched.patientCpf = formatCPF(cleanCpf);
     existingSched.startDate = startDate;
     existingSched.endDate = endDate;
     existingSched.tripType = tripType || 'ida_e_volta';
@@ -978,6 +1002,7 @@ async function startServer() {
     const historyItem: HistoryLog = {
       id: 'history-' + Math.random().toString(36).substr(2, 9),
       patientName: sched.patientName,
+      patientCpf: sched.patientCpf,
       startDate: sched.startDate,
       endDate: sched.endDate,
       vehicleDetails,
@@ -1085,17 +1110,49 @@ async function startServer() {
     res.json(DatabaseManager.getChecklists());
   });
 
+  // POST /api/checklists - Criar checklist inicial (Saída) ou checklist completo
   app.post('/api/checklists', (req, res) => {
     const user = getRequestUser(req);
     if (!user) return res.status(401).json({ error: 'Não autorizado' });
 
     const chk = req.body;
-    if (!chk.vehicleId || !chk.vehicleModelPlate || !chk.date || chk.initialKm === undefined || chk.finalKm === undefined) {
-      return res.status(400).json({ error: 'Dados obrigatórios do checklist ausentes (Quilometragem/Veículo/Data).' });
+    if (!chk.vehicleId || !chk.vehicleModelPlate || !chk.date || chk.initialKm === undefined) {
+      return res.status(400).json({ error: 'Dados obrigatórios da saída do veículo ausentes (Veículo, Data, Quilometragem inicial).' });
+    }
+
+    if (!chk.combustivelInicial) {
+      return res.status(400).json({ error: 'É OBRIGATÓRIO informar o nível de combustível inicial no momento em que pegou o veículo.' });
+    }
+
+    if (!chk.fotoPainelCombustivelInicial) {
+      return res.status(400).json({ error: 'É OBRIGATÓRIO enviar a foto do painel de combustível no momento em que pegou o veículo.' });
     }
 
     if (!chk.fotoFrente || !chk.fotoFundo || !chk.fotoLateralEsquerda || !chk.fotoLateralDireita) {
-      return res.status(400).json({ error: 'É obrigatório enviar todas as 4 fotos do veículo (Frente, Fundo, Lateral Esquerda e Lateral Direita).' });
+      return res.status(400).json({ error: 'É OBRIGATÓRIO enviar todas as 4 fotos do veículo na saída (Frente, Fundo/Traseira, Lateral Esquerda e Lateral Direita).' });
+    }
+
+    const isCompletingImmediately = chk.finalKm !== undefined && chk.finalKm !== null && chk.finalKm !== '';
+
+    if (isCompletingImmediately) {
+      if (Number(chk.finalKm) < Number(chk.initialKm)) {
+        return res.status(400).json({ error: 'A quilometragem final não pode ser menor que a quilometragem inicial.' });
+      }
+      if (!chk.fotoKmFinal) {
+        return res.status(400).json({ error: 'É OBRIGATÓRIO enviar a foto do painel/odômetro com a quilometragem final ao devolver o veículo.' });
+      }
+      if (!chk.combustivelFinal) {
+        return res.status(400).json({ error: 'É OBRIGATÓRIO informar o nível de combustível final na devolução do veículo.' });
+      }
+      if (!chk.fotoPainelCombustivelFinal) {
+        return res.status(400).json({ error: 'É OBRIGATÓRIO enviar a foto do painel de combustível final na devolução do veículo.' });
+      }
+      if (chk.houveAbastecimento && (!chk.abastecimentoLitros || Number(chk.abastecimentoLitros) <= 0)) {
+        return res.status(400).json({ error: 'Como houve abastecimento, por favor informe a quantidade em litros (L).' });
+      }
+      if (chk.houveIncidente && !chk.descricaoIncidente?.trim()) {
+        return res.status(400).json({ error: 'Por favor, descreva detalhadamente o incidente ocorrido com o veículo.' });
+      }
     }
 
     const newChecklist: VehicleChecklist = {
@@ -1103,8 +1160,10 @@ async function startServer() {
       vehicleId: chk.vehicleId,
       vehicleModelPlate: chk.vehicleModelPlate,
       date: chk.date,
+      status: isCompletingImmediately ? 'concluido' : 'em_andamento',
       initialKm: Number(chk.initialKm),
-      finalKm: Number(chk.finalKm),
+      combustivelInicial: chk.combustivelInicial,
+      fotoPainelCombustivelInicial: chk.fotoPainelCombustivelInicial,
       oleo: !!chk.oleo,
       agua: !!chk.agua,
       oxigenio: !!chk.oxigenio,
@@ -1127,6 +1186,21 @@ async function startServer() {
       fotoFundo: chk.fotoFundo || '',
       fotoLateralEsquerda: chk.fotoLateralEsquerda || '',
       fotoLateralDireita: chk.fotoLateralDireita || '',
+      finalKm: isCompletingImmediately ? Number(chk.finalKm) : undefined,
+      fotoKmFinal: chk.fotoKmFinal || undefined,
+      combustivelFinal: chk.combustivelFinal || undefined,
+      fotoPainelCombustivelFinal: chk.fotoPainelCombustivelFinal || undefined,
+      houveAbastecimento: !!chk.houveAbastecimento,
+      abastecimentoLitros: chk.abastecimentoLitros ? Number(chk.abastecimentoLitros) : undefined,
+      abastecimentoValor: chk.abastecimentoValor ? Number(chk.abastecimentoValor) : undefined,
+      abastecimentoPosto: chk.abastecimentoPosto || undefined,
+      abastecimentoComprovanteFoto: chk.abastecimentoComprovanteFoto || undefined,
+      houveIncidente: !!chk.houveIncidente,
+      descricaoIncidente: chk.descricaoIncidente || undefined,
+      fotoIncidente: chk.fotoIncidente || undefined,
+      retornoHorario: chk.retornoHorario || undefined,
+      retornoData: chk.retornoData || (isCompletingImmediately ? chk.date : undefined),
+      completedAt: isCompletingImmediately ? new Date().toISOString() : undefined,
       driverUserId: user.id,
       driverUserName: user.name,
       createdAt: new Date().toISOString()
@@ -1134,6 +1208,88 @@ async function startServer() {
 
     DatabaseManager.saveChecklist(newChecklist);
     res.status(201).json(newChecklist);
+  });
+
+  // PUT /api/checklists/:id/complete - Concluir o checklist no momento da devolução do veículo
+  app.put('/api/checklists/:id/complete', (req, res) => {
+    const user = getRequestUser(req);
+    if (!user) return res.status(401).json({ error: 'Não autorizado' });
+
+    const id = req.params.id;
+    const checklists = DatabaseManager.getChecklists();
+    const existingChk = checklists.find(c => c.id === id);
+
+    if (!existingChk) {
+      return res.status(404).json({ error: 'Checklist não encontrado.' });
+    }
+
+    const {
+      finalKm,
+      fotoKmFinal,
+      combustivelFinal,
+      fotoPainelCombustivelFinal,
+      houveAbastecimento,
+      abastecimentoLitros,
+      abastecimentoValor,
+      abastecimentoPosto,
+      abastecimentoComprovanteFoto,
+      houveIncidente,
+      descricaoIncidente,
+      fotoIncidente,
+      retornoHorario,
+      retornoData
+    } = req.body;
+
+    if (finalKm === undefined || finalKm === null || finalKm === '') {
+      return res.status(400).json({ error: 'É OBRIGATÓRIO informar a quilometragem final (KM) na devolução do veículo.' });
+    }
+
+    if (Number(finalKm) < Number(existingChk.initialKm)) {
+      return res.status(400).json({ error: `A quilometragem final (${finalKm} KM) não pode ser menor que a quilometragem inicial (${existingChk.initialKm} KM).` });
+    }
+
+    if (!fotoKmFinal) {
+      return res.status(400).json({ error: 'É OBRIGATÓRIO enviar a foto do odômetro/painel com a quilometragem final.' });
+    }
+
+    if (!combustivelFinal) {
+      return res.status(400).json({ error: 'É OBRIGATÓRIO informar o nível de combustível na devolução do veículo.' });
+    }
+
+    if (!fotoPainelCombustivelFinal) {
+      return res.status(400).json({ error: 'É OBRIGATÓRIO enviar a foto do painel de combustível no momento da devolução.' });
+    }
+
+    if (houveAbastecimento && (!abastecimentoLitros || Number(abastecimentoLitros) <= 0)) {
+      return res.status(400).json({ error: 'Como houve abastecimento, por favor informe a quantidade em litros (L).' });
+    }
+
+    if (houveIncidente && !descricaoIncidente?.trim()) {
+      return res.status(400).json({ error: 'Por favor, descreva detalhadamente o incidente ocorrido com o veículo.' });
+    }
+
+    const updatedChecklist: VehicleChecklist = {
+      ...existingChk,
+      status: 'concluido',
+      finalKm: Number(finalKm),
+      fotoKmFinal,
+      combustivelFinal,
+      fotoPainelCombustivelFinal,
+      houveAbastecimento: !!houveAbastecimento,
+      abastecimentoLitros: abastecimentoLitros ? Number(abastecimentoLitros) : undefined,
+      abastecimentoValor: abastecimentoValor ? Number(abastecimentoValor) : undefined,
+      abastecimentoPosto: abastecimentoPosto || undefined,
+      abastecimentoComprovanteFoto: abastecimentoComprovanteFoto || undefined,
+      houveIncidente: !!houveIncidente,
+      descricaoIncidente: descricaoIncidente?.trim() || undefined,
+      fotoIncidente: fotoIncidente || undefined,
+      retornoHorario: retornoHorario || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      retornoData: retornoData || new Date().toISOString().split('T')[0],
+      completedAt: new Date().toISOString()
+    };
+
+    DatabaseManager.saveChecklist(updatedChecklist);
+    res.json(updatedChecklist);
   });
 
   app.delete('/api/checklists/:id', (req, res) => {

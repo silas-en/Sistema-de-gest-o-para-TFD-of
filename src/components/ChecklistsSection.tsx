@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { ClipboardList, Search, Trash2, Calendar, FileText, CheckCircle2, AlertCircle, Printer, X, Eye, ChevronDown, ChevronUp, Camera, Maximize2, Users, Filter, RotateCcw } from 'lucide-react';
+import { ClipboardList, Search, Trash2, Calendar, FileText, CheckCircle2, AlertCircle, Printer, X, Eye, ChevronDown, ChevronUp, Camera, Maximize2, Users, Filter, RotateCcw, Truck, CheckSquare, Fuel, AlertTriangle, DollarSign } from 'lucide-react';
 import { VehicleChecklist, UserProfile, Vehicle } from '../types.js';
 import { getOilMaintenanceStatus } from '../utils/oilChange.js';
 import ConfirmDialog from './ConfirmDialog.js';
@@ -159,6 +159,17 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
     setSelectedDate('');
   };
 
+  const getFuelLabel = (fuel?: string) => {
+    switch (fuel) {
+      case 'reserva': return '⛽ Reserva';
+      case '1/4': return '1/4 (Um Quarto)';
+      case '1/2': return '1/2 (Meio Tanque)';
+      case '3/4': return '3/4 (Três Quartos)';
+      case 'cheio': return '🟢 Tanque Cheio';
+      default: return fuel || 'Não informado';
+    }
+  };
+
   const uniqueVehicles = Array.from(new Set(checklists.map(c => c.vehicleModelPlate))).filter(Boolean);
   const uniqueDrivers = Array.from(new Set(checklists.map(c => c.driverUserName))).filter(Boolean);
 
@@ -206,10 +217,10 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
           </div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center">
             <ClipboardList className="h-5 w-5 mr-2 text-blue-600" />
-            Checklists dos Motoristas (Organizados por Data)
+            Checklists de Veículos em 2 Etapas (Saída & Devolução)
           </h2>
           <p className="text-sm text-slate-500">
-            Acesso compartilhado entre Administradores e Coordenadores a todos os checklists enviados pelos motoristas, ordenados por data.
+            Acompanhamento em tempo real das saídas dos motoristas e devoluções com controle de combustível, odômetro, fotos obrigatórias, abastecimento e incidentes.
           </p>
         </div>
 
@@ -367,6 +378,8 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
           {filteredChecklists.map((chk) => {
             const isExpanded = expandedId === chk.id;
             const formattedDate = chk.date.split('-').reverse().join('/');
+            const isCompleted = chk.status === 'concluido' || (chk.finalKm !== undefined && chk.finalKm !== null && Number(chk.finalKm) > 0);
+            const kmRodada = isCompleted && chk.finalKm ? Number(chk.finalKm) - Number(chk.initialKm) : 0;
             
             // Count OK vs Pendente
             const items = [
@@ -385,7 +398,11 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
 
             return (
               <div key={chk.id} className={`bg-white border rounded-2xl shadow-sm transition-all overflow-hidden ${
-                isOilOverdue ? 'border-amber-300 ring-1 ring-amber-400' : 'border-slate-100 hover:border-blue-150'
+                !isCompleted 
+                  ? 'border-amber-300 ring-1 ring-amber-400' 
+                  : isOilOverdue 
+                    ? 'border-rose-300 ring-1 ring-rose-400' 
+                    : 'border-slate-150 hover:border-blue-200'
               }`}>
                 {/* Header Summary */}
                 <div 
@@ -393,7 +410,13 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
                   onClick={() => setExpandedId(isExpanded ? null : chk.id)}
                 >
                   <div className="flex items-start space-x-3">
-                    <div className={`p-2.5 rounded-xl shrink-0 ${isOilOverdue ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                    <div className={`p-2.5 rounded-xl shrink-0 ${
+                      !isCompleted 
+                        ? 'bg-amber-100 text-amber-800' 
+                        : isOilOverdue 
+                          ? 'bg-rose-100 text-rose-800' 
+                          : 'bg-emerald-100 text-emerald-800'
+                    }`}>
                       <FileText className="h-5 w-5" />
                     </div>
                     <div>
@@ -404,39 +427,47 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
                         <span className="text-xs font-mono text-slate-400">
                           {new Date(chk.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </span>
+                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                          isCompleted ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-900 border border-amber-300'
+                        }`}>
+                          {isCompleted ? '✓ Concluído (Saída + Devolução)' : '⏳ Em Trânsito (Aguardando Devolução)'}
+                        </span>
                         {isOilOverdue && (
-                          <span className="text-[10px] bg-amber-500 text-white font-extrabold px-2 py-0.5 rounded-full flex items-center space-x-1 shadow-xs">
-                            <span>🚨 ALERTA TROCA DE ÓLEO ({kmSinceLastOil}/{limitKm} KM)</span>
+                          <span className="text-[10px] bg-rose-600 text-white font-extrabold px-2 py-0.5 rounded-full flex items-center space-x-1 shadow-xs">
+                            <span>🚨 ALERTA ÓLEO ({kmSinceLastOil}/{limitKm} KM)</span>
+                          </span>
+                        )}
+                        {chk.houveIncidente && (
+                          <span className="text-[10px] bg-rose-100 text-rose-800 font-extrabold px-2 py-0.5 rounded-full border border-rose-300">
+                            ⚠️ Incidente Registrado
+                          </span>
+                        )}
+                        {chk.houveAbastecimento && (
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full border border-emerald-300">
+                            ⛽ Abastecido
                           </span>
                         )}
                       </div>
                       <h4 className="text-sm font-bold text-slate-900 mt-1">{chk.vehicleModelPlate}</h4>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Motorista: <span className="font-semibold text-slate-700">{chk.driverUserName}</span>
+                        Motorista: <span className="font-semibold text-slate-700">{chk.driverUserName}</span> • Destino: <span className="font-medium text-slate-600">{chk.saidaDestino} ({chk.saidaCidade})</span>
                       </p>
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 md:text-right">
                     <div className="text-xs">
-                      <p className="text-slate-500">KM Inicial/Final</p>
+                      <p className="text-slate-500">Quilometragem</p>
                       <p className="font-semibold text-slate-800 font-mono mt-0.5">
-                        {chk.initialKm} → {chk.finalKm} ({chk.finalKm - chk.initialKm} km rodados)
+                        {chk.initialKm} KM {isCompleted ? `→ ${chk.finalKm} KM (${kmRodada} km)` : '(Inicial)'}
                       </p>
                     </div>
 
                     <div className="text-xs">
-                      <p className="text-slate-500">Estado geral</p>
-                      <div className="flex items-center space-x-2 mt-0.5">
-                        <span className="bg-emerald-50 text-emerald-800 font-bold px-2 py-0.5 rounded text-xxs">
-                          {okCount} OK
-                        </span>
-                        {pendenteCount > 0 && (
-                          <span className="bg-rose-50 text-rose-800 font-bold px-2 py-0.5 rounded text-xxs">
-                            {pendenteCount} PENDENTES
-                          </span>
-                        )}
-                      </div>
+                      <p className="text-slate-500">Combustível</p>
+                      <p className="font-semibold text-slate-800 mt-0.5">
+                        {getFuelLabel(chk.combustivelInicial)} {isCompleted && `→ ${getFuelLabel(chk.combustivelFinal)}`}
+                      </p>
                     </div>
 
                     <div className="flex items-center space-x-1.5 pl-2 border-t md:border-t-0 md:border-l border-slate-100 pt-2 md:pt-0">
@@ -472,135 +503,251 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
                 {/* Expanded content details */}
                 {isExpanded && (
                   <div className="border-t border-slate-100 bg-slate-50/50 p-6 space-y-6 animate-fadeIn">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      
-                      {/* Left: General info */}
-                      <div className="bg-white p-4 rounded-xl border border-slate-150 shadow-sm space-y-3">
-                        <h5 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider border-b pb-1.5">
-                          Informações do Veículo e Viagem
+                    
+                    {/* PARTE 1: SAÍDA (PEGOU O CARRO) */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <h5 className="text-xs font-extrabold text-emerald-800 uppercase tracking-wider flex items-center space-x-2">
+                          <Truck className="h-4 w-4 text-emerald-600" />
+                          <span>Parte 1: Checklist de Saída (Pegou o Veículo)</span>
                         </h5>
-                        <ul className="text-xs space-y-2 text-slate-600">
-                          <li><strong>Veículo:</strong> {chk.vehicleModelPlate}</li>
-                          <li><strong>Data do Checklist:</strong> {formattedDate}</li>
-                          <li><strong>Quilometragem Inicial:</strong> {chk.initialKm} KM</li>
-                          <li><strong>Quilometragem Final:</strong> {chk.finalKm} KM</li>
-                          <li><strong>Total Percorrido:</strong> {chk.finalKm - chk.initialKm} KM</li>
-                        </ul>
+                        <span className="text-xs font-bold text-slate-500">
+                          Saída às {chk.saidaHorario} em {formattedDate}
+                        </span>
                       </div>
 
-                      {/* Center: Base Exit Info */}
-                      <div className="bg-white p-4 rounded-xl border border-slate-150 shadow-sm space-y-3">
-                        <h5 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider border-b pb-1.5">
-                          Dados de Saída da Base
-                        </h5>
-                        <ul className="text-xs space-y-2 text-slate-600">
-                          <li><strong>Horário de Saída:</strong> {chk.saidaHorario}</li>
-                          <li><strong>Destino / Hospital:</strong> {chk.saidaDestino}</li>
-                          <li><strong>Cidade:</strong> {chk.saidaCidade}</li>
-                          <li><strong>Motorista (Condutor):</strong> {chk.driverUserName}</li>
-                        </ul>
-                      </div>
-
-                      {/* Right: Quick Report summary */}
-                      <div className="bg-gradient-to-br from-slate-800 to-slate-950 text-white p-5 rounded-xl shadow-md space-y-2.5">
-                        <h5 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-widest">
-                          RESUMO DO DIAGNÓSTICO
-                        </h5>
-                        <p className="text-xs text-slate-300 leading-relaxed">
-                          Checklist submetido eletronicamente pelo condutor <span className="text-white font-bold">{chk.driverUserName}</span> em conformidade com as exigências da Secretaria Municipal de Saúde.
-                        </p>
-                        <div className="pt-2 flex justify-between items-center text-xs font-semibold">
-                          <span>Itens aprovados:</span>
-                          <span className="text-emerald-400 font-mono text-base">{okCount} / 15</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-600">
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-150">
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Quilometragem Inicial</span>
+                          <strong className="text-sm text-slate-900 font-mono">{chk.initialKm} KM</strong>
+                        </div>
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-150">
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Nível de Combustível</span>
+                          <strong className="text-xs text-slate-900">{getFuelLabel(chk.combustivelInicial)}</strong>
+                        </div>
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-150">
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Destino e Cidade</span>
+                          <strong className="text-xs text-slate-900">{chk.saidaDestino} ({chk.saidaCidade})</strong>
+                        </div>
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-150">
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Condutor Responsável</span>
+                          <strong className="text-xs text-slate-900">{chk.driverUserName}</strong>
                         </div>
                       </div>
 
-                    </div>
-
-                    {/* Verification checklist items */}
-                    <div className="bg-white p-5 rounded-xl border border-slate-150 shadow-sm">
-                      <h5 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3 pb-1 border-b">
-                        Estado dos Parâmetros Verificados
-                      </h5>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3.5">
-                        {[
-                          { label: 'Óleo', val: chk.oleo },
-                          { label: 'Água', val: chk.agua },
-                          { label: 'Oxigênio', val: chk.oxigenio },
-                          { label: 'Para-brisa', val: chk.parabrisa },
-                          { label: 'Luz de ré', val: chk.luzRe },
-                          { label: 'Ar-condicionado', val: chk.arCondicionado },
-                          { label: 'Documento', val: chk.documento },
-                          { label: 'Piscas', val: chk.piscas },
-                          { label: 'Retrovisores', val: chk.retrovisores },
-                          { label: 'Sirene', val: chk.sirene },
-                          { label: 'Marcador Combustível', val: chk.marcadorCombustivel },
-                          { label: 'Chave de rodas', val: chk.chaveRodas },
-                          { label: 'Macaco', val: chk.macaco },
-                          { label: 'Buzina', val: chk.buzina },
-                          { label: 'Faróis', val: chk.farois },
-                        ].map((item, idx) => (
-                          <div 
-                            key={idx} 
-                            className={`p-2.5 border rounded-xl flex flex-col justify-between h-16 text-center transition-all ${
-                              item.val 
-                                ? 'bg-emerald-50/50 border-emerald-100 text-emerald-950 font-semibold' 
-                                : 'bg-rose-50 border-rose-100 text-rose-950 font-semibold'
-                            }`}
-                          >
-                            <span className="text-[10px] text-slate-500 font-bold uppercase truncate tracking-wide">{item.label}</span>
-                            <span className="text-xs font-bold mt-1">
-                              {item.val ? '🆗 OK' : '❌ PENDENTE'}
-                            </span>
+                      {/* Foto Painel Combustível Inicial */}
+                      {chk.fotoPainelCombustivelInicial && (
+                        <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-xl flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <Fuel className="h-4 w-4 text-amber-600" />
+                            <span className="text-xs font-bold text-amber-950">Foto do Painel de Combustível na Saída (Obrigatória):</span>
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                          <button
+                            onClick={() => setSelectedPhotoZoom({ title: `${chk.vehicleModelPlate} - Painel Combustível Saída`, url: chk.fotoPainelCombustivelInicial! })}
+                            className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center space-x-1"
+                          >
+                            <Maximize2 className="h-3 w-3" />
+                            <span>Visualizar Foto</span>
+                          </button>
+                        </div>
+                      )}
 
-                    {/* Photos Section */}
-                    {(chk.fotoFrente || chk.fotoFundo || chk.fotoLateralEsquerda || chk.fotoLateralDireita) ? (
-                      <div className="bg-white p-5 rounded-xl border border-slate-150 shadow-sm">
-                        <h5 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3 pb-1 border-b flex items-center space-x-2">
-                          <Camera className="h-4 w-4 text-emerald-600" />
-                          <span>Registros Fotográficos do Veículo (4 Ângulos)</span>
-                        </h5>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {/* Verification checklist items */}
+                      <div>
+                        <h6 className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-2">
+                          Itens de Vistoria de Segurança
+                        </h6>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                           {[
-                            { title: 'Frente', url: chk.fotoFrente },
-                            { title: 'Fundo / Traseira', url: chk.fotoFundo },
-                            { title: 'Lateral Esquerda', url: chk.fotoLateralEsquerda },
-                            { title: 'Lateral Direita', url: chk.fotoLateralDireita },
-                          ].map((photo, idx) => photo.url ? (
+                            { label: 'Óleo', val: chk.oleo },
+                            { label: 'Água', val: chk.agua },
+                            { label: 'Oxigênio', val: chk.oxigenio },
+                            { label: 'Para-brisa', val: chk.parabrisa },
+                            { label: 'Luz de ré', val: chk.luzRe },
+                            { label: 'Ar-condicionado', val: chk.arCondicionado },
+                            { label: 'Documento', val: chk.documento },
+                            { label: 'Piscas', val: chk.piscas },
+                            { label: 'Retrovisores', val: chk.retrovisores },
+                            { label: 'Sirene', val: chk.sirene },
+                            { label: 'Marcador Comb.', val: chk.marcadorCombustivel },
+                            { label: 'Chave de rodas', val: chk.chaveRodas },
+                            { label: 'Macaco', val: chk.macaco },
+                            { label: 'Buzina', val: chk.buzina },
+                            { label: 'Faróis', val: chk.farois },
+                          ].map((item, idx) => (
                             <div 
-                              key={idx}
-                              onClick={() => setSelectedPhotoZoom({ title: `${chk.vehicleModelPlate} - ${photo.title}`, url: photo.url! })}
-                              className="group relative rounded-xl overflow-hidden border border-slate-200 aspect-video bg-slate-900 cursor-pointer hover:border-emerald-500 shadow-sm transition-all"
+                              key={idx} 
+                              className={`p-2 border rounded-xl flex items-center justify-between text-xs ${
+                                item.val 
+                                  ? 'bg-emerald-50/50 border-emerald-200 text-emerald-950 font-semibold' 
+                                  : 'bg-rose-50 border-rose-200 text-rose-950 font-semibold'
+                              }`}
                             >
-                              <img src={photo.url} alt={photo.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                              <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <span className="bg-white text-slate-900 text-xxs font-bold px-2.5 py-1 rounded-lg shadow flex items-center space-x-1">
-                                  <Maximize2 className="h-3 w-3" />
-                                  <span>Ver Foto</span>
-                                </span>
-                              </div>
-                              <span className="absolute bottom-0 inset-x-0 bg-black/70 text-white text-[10px] font-bold text-center py-1 truncate">
-                                {photo.title}
+                              <span className="text-[10px] text-slate-600 font-bold uppercase truncate">{item.label}</span>
+                              <span className="text-[10px] font-black">
+                                {item.val ? 'OK' : '❌ PEND'}
                               </span>
-                            </div>
-                          ) : (
-                            <div key={idx} className="border border-dashed border-slate-200 rounded-xl aspect-video flex flex-col items-center justify-center p-2 text-center bg-slate-50">
-                              <Camera className="h-5 w-5 text-slate-300 mb-1" />
-                              <span className="text-[10px] font-semibold text-slate-400">{photo.title} não enviada</span>
                             </div>
                           ))}
                         </div>
                       </div>
-                    ) : (
-                      <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-semibold flex items-center space-x-2">
-                        <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
-                        <span>Nenhuma registro fotográfico anexado neste checklist legado.</span>
+
+                      {/* 4 Photos of vehicle at departure */}
+                      {(chk.fotoFrente || chk.fotoFundo || chk.fotoLateralEsquerda || chk.fotoLateralDireita) && (
+                        <div>
+                          <h6 className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-2 flex items-center space-x-1.5">
+                            <Camera className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>Fotos do Veículo na Saída (4 Ângulos Obrigatórios)</span>
+                          </h6>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {[
+                              { title: 'Frente', url: chk.fotoFrente },
+                              { title: 'Fundo / Traseira', url: chk.fotoFundo },
+                              { title: 'Lateral Esquerda', url: chk.fotoLateralEsquerda },
+                              { title: 'Lateral Direita', url: chk.fotoLateralDireita },
+                            ].map((photo, idx) => photo.url ? (
+                              <div 
+                                key={idx}
+                                onClick={() => setSelectedPhotoZoom({ title: `${chk.vehicleModelPlate} - ${photo.title}`, url: photo.url! })}
+                                className="group relative rounded-xl overflow-hidden border border-slate-200 aspect-video bg-slate-900 cursor-pointer hover:border-emerald-500 shadow-sm transition-all"
+                              >
+                                <img src={photo.url} alt={photo.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <span className="bg-white text-slate-900 text-xxs font-bold px-2 py-1 rounded shadow">
+                                    Ampliar
+                                  </span>
+                                </div>
+                                <span className="absolute bottom-0 inset-x-0 bg-black/70 text-white text-[10px] font-bold text-center py-0.5 truncate">
+                                  {photo.title}
+                                </span>
+                              </div>
+                            ) : null)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* PARTE 2: DEVOLUÇÃO (FIM DO EXPEDIENTE) */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <h5 className="text-xs font-extrabold text-blue-800 uppercase tracking-wider flex items-center space-x-2">
+                          <CheckSquare className="h-4 w-4 text-blue-600" />
+                          <span>Parte 2: Checklist de Devolução (Fim de Expediente / Viagem)</span>
+                        </h5>
+                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                          isCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {isCompleted ? `Concluído em ${chk.retornoData?.split('-').reverse().join('/') || formattedDate} às ${chk.retornoHorario || ''}` : 'Pendente de Devolução'}
+                        </span>
                       </div>
-                    )}
+
+                      {isCompleted ? (
+                        <>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-600">
+                            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-150">
+                              <span className="text-[10px] text-slate-400 uppercase font-bold block">Quilometragem Final</span>
+                              <strong className="text-sm text-slate-900 font-mono">{chk.finalKm} KM</strong>
+                            </div>
+                            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-150">
+                              <span className="text-[10px] text-slate-400 uppercase font-bold block">Distância Percorrida</span>
+                              <strong className="text-sm text-emerald-700 font-mono">{kmRodada} KM</strong>
+                            </div>
+                            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-150">
+                              <span className="text-[10px] text-slate-400 uppercase font-bold block">Nível de Combustível Final</span>
+                              <strong className="text-xs text-slate-900">{getFuelLabel(chk.combustivelFinal)}</strong>
+                            </div>
+                            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-150">
+                              <span className="text-[10px] text-slate-400 uppercase font-bold block">Horário Devolução</span>
+                              <strong className="text-xs text-slate-900">{chk.retornoHorario || 'Concluído'}</strong>
+                            </div>
+                          </div>
+
+                          {/* Fotos Obrigatórias de Odômetro e Painel de Combustível Final */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {chk.fotoKmFinal && (
+                              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <Camera className="h-4 w-4 text-blue-600" />
+                                  <span className="text-xs font-bold text-slate-900">Foto do Odômetro / KM Final:</span>
+                                </div>
+                                <button
+                                  onClick={() => setSelectedPhotoZoom({ title: `${chk.vehicleModelPlate} - Odômetro Final`, url: chk.fotoKmFinal! })}
+                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center space-x-1"
+                                >
+                                  <Maximize2 className="h-3 w-3" />
+                                  <span>Ver Foto</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {chk.fotoPainelCombustivelFinal && (
+                              <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-xl flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <Fuel className="h-4 w-4 text-amber-600" />
+                                  <span className="text-xs font-bold text-amber-950">Foto Painel Combustível Final:</span>
+                                </div>
+                                <button
+                                  onClick={() => setSelectedPhotoZoom({ title: `${chk.vehicleModelPlate} - Painel Combustível Devolução`, url: chk.fotoPainelCombustivelFinal! })}
+                                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center space-x-1"
+                                >
+                                  <Maximize2 className="h-3 w-3" />
+                                  <span>Ver Foto</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Abastecimento info */}
+                          {chk.houveAbastecimento && (
+                            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs space-y-1">
+                              <div className="font-extrabold text-emerald-950 flex items-center gap-1.5">
+                                <Fuel className="h-4 w-4 text-emerald-700" />
+                                <span>Abastecimento Registrado durante a Viagem:</span>
+                              </div>
+                              <p className="text-emerald-900 font-medium">
+                                Foram abastecidos <strong>{chk.abastecimentoLitros} Litros (L)</strong>
+                                {chk.abastecimentoValor ? ` no valor de R$ ${chk.abastecimentoValor}` : ''}
+                                {chk.abastecimentoPosto ? ` no posto ${chk.abastecimentoPosto}` : ''}.
+                              </p>
+                              {chk.abastecimentoComprovanteFoto && (
+                                <button
+                                  onClick={() => setSelectedPhotoZoom({ title: 'Comprovante de Abastecimento', url: chk.abastecimentoComprovanteFoto! })}
+                                  className="text-emerald-800 font-extrabold underline mt-1 inline-block"
+                                >
+                                  Ver Comprovante / Cupom Fiscal
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Incidente info */}
+                          {chk.houveIncidente && (
+                            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs space-y-1.5">
+                              <div className="font-extrabold text-rose-950 flex items-center gap-1.5">
+                                <AlertTriangle className="h-4 w-4 text-rose-600" />
+                                <span>Relato de Incidente / Avaria no Veículo:</span>
+                              </div>
+                              <p className="text-slate-800 bg-white p-2.5 rounded-lg border border-rose-200 font-medium leading-relaxed">
+                                {chk.descricaoIncidente}
+                              </p>
+                              {chk.fotoIncidente && (
+                                <button
+                                  onClick={() => setSelectedPhotoZoom({ title: 'Registro do Incidente / Avaria', url: chk.fotoIncidente! })}
+                                  className="text-rose-800 font-extrabold underline inline-block"
+                                >
+                                  Ver Foto do Incidente
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-center justify-between">
+                          <span>O condutor ainda não finalizou a devolução deste veículo na base.</span>
+                          <span className="font-mono font-bold bg-amber-200 text-amber-950 px-2 py-0.5 rounded">STATUS: EM TRÂNSITO</span>
+                        </div>
+                      )}
+                    </div>
 
                   </div>
                 )}
@@ -610,20 +757,23 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
         </div>
       )}
 
-      {/* Hidden printing layout that matches user's request exactly */}
+      {/* Hidden printing layout */}
       {printingChecklist && (
         <div className="hidden print:block print:p-8 bg-white text-black font-mono text-sm leading-6 space-y-4">
           <div className="text-center border-b-2 border-black pb-4">
-            <h2 className="text-xl font-bold">RELATÓRIO DE CHECKLIST DE VEÍCULO</h2>
+            <h2 className="text-xl font-bold">RELATÓRIO DE CHECKLIST DE VEÍCULO EM 2 ETAPAS</h2>
             <p className="text-xs uppercase tracking-wide">Secretaria Municipal de Saúde - TFD</p>
           </div>
           
           <div className="space-y-1">
-            <p className="text-base font-bold uppercase">CHECK LIST</p>
+            <p className="text-base font-bold uppercase">CHECKLIST DE SAÍDA E DEVOLUÇÃO</p>
             <p><strong>VEÍCULO / AMBULÂNCIA:</strong> {printingChecklist.vehicleModelPlate}</p>
-            <p><strong>DATA:</strong> {printingChecklist.date.split('-').reverse().join('/')}</p>
-            <p><strong>KM INICIAL:</strong> {printingChecklist.initialKm}</p>
-            <p><strong>KM FINAL:</strong> {printingChecklist.finalKm}</p>
+            <p><strong>DATA DE SAÍDA:</strong> {printingChecklist.date.split('-').reverse().join('/')} às {printingChecklist.saidaHorario}</p>
+            <p><strong>DESTINO:</strong> {printingChecklist.saidaDestino} ({printingChecklist.saidaCidade})</p>
+            <p><strong>KM INICIAL:</strong> {printingChecklist.initialKm} KM | <strong>COMBUSTÍVEL INICIAL:</strong> {getFuelLabel(printingChecklist.combustivelInicial)}</p>
+            {printingChecklist.finalKm && (
+              <p><strong>KM FINAL:</strong> {printingChecklist.finalKm} KM | <strong>COMBUSTÍVEL FINAL:</strong> {getFuelLabel(printingChecklist.combustivelFinal)} | <strong>TOTAL:</strong> {printingChecklist.finalKm - printingChecklist.initialKm} KM</p>
+            )}
           </div>
 
           <div className="border-t border-b border-black py-2 my-2 grid grid-cols-2 gap-x-8 gap-y-1">
@@ -644,25 +794,34 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
             <div><strong>FAROIS-</strong> {printingChecklist.farois ? '🆗' : '❌'}</div>
           </div>
 
-          <div className="space-y-1">
-            <p className="font-bold uppercase">SAÍDA DA BASE</p>
-            <p><strong>HORÁRIO:</strong> {printingChecklist.saidaHorario}</p>
-            <p><strong>DESTINO:</strong> {printingChecklist.saidaDestino}</p>
-            <p><strong>CIDADE:</strong> {printingChecklist.saidaCidade}</p>
-          </div>
+          {printingChecklist.houveAbastecimento && (
+            <div className="border-b border-black pb-2">
+              <p>
+                <strong>ABASTECIMENTO:</strong> {printingChecklist.abastecimentoLitros} L
+                {printingChecklist.abastecimentoValor ? ` - R$ ${printingChecklist.abastecimentoValor}` : ''}
+                {printingChecklist.abastecimentoPosto ? ` (${printingChecklist.abastecimentoPosto})` : ''}
+              </p>
+            </div>
+          )}
 
-          {(printingChecklist.fotoFrente || printingChecklist.fotoFundo || printingChecklist.fotoLateralEsquerda || printingChecklist.fotoLateralDireita) && (
+          {printingChecklist.houveIncidente && (
+            <div className="border-b border-black pb-2 text-red-700">
+              <p><strong>INCIDENTE RELATADO:</strong> {printingChecklist.descricaoIncidente}</p>
+            </div>
+          )}
+
+          {(printingChecklist.fotoFrente || printingChecklist.fotoFundo || printingChecklist.fotoPainelCombustivelInicial || printingChecklist.fotoKmFinal) && (
             <div className="pt-4 border-t border-black space-y-2">
-              <p className="font-bold uppercase">REGISTROS FOTOGRÁFICOS ANEXADOS</p>
+              <p className="font-bold uppercase">REGISTROS FOTOGRÁFICOS</p>
               <div className="grid grid-cols-2 gap-4 pt-1">
                 {[
-                  { title: 'Frente', url: printingChecklist.fotoFrente },
-                  { title: 'Fundo / Traseira', url: printingChecklist.fotoFundo },
-                  { title: 'Lateral Esquerda', url: printingChecklist.fotoLateralEsquerda },
-                  { title: 'Lateral Direita', url: printingChecklist.fotoLateralDireita },
+                  { title: 'Painel Combustível Saída', url: printingChecklist.fotoPainelCombustivelInicial },
+                  { title: 'Frente do Veículo', url: printingChecklist.fotoFrente },
+                  { title: 'Odômetro Final', url: printingChecklist.fotoKmFinal },
+                  { title: 'Painel Combustível Final', url: printingChecklist.fotoPainelCombustivelFinal },
                 ].map((p, idx) => p.url ? (
                   <div key={idx} className="border border-black p-1 text-center">
-                    <img src={p.url} alt={p.title} className="max-h-40 mx-auto object-contain" />
+                    <img src={p.url} alt={p.title} className="max-h-36 mx-auto object-contain" />
                     <span className="text-[10px] font-bold uppercase mt-1 block">{p.title}</span>
                   </div>
                 ) : null)}

@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, User, Truck, Landmark, ClipboardList, ShieldAlert, BadgeInfo, CheckCircle, FileText, AlertTriangle, Plus, Edit, CornerDownLeft, Eye, ShieldCheck, Clock, AlertCircle, Printer, X, ExternalLink, Trash2 } from 'lucide-react';
 import { Schedule, Vehicle, Hospital, RequestMedicalType, User as UserType, HistoryLog, Driver } from '../types.js';
 import { normalizeText } from '../lib/normalize.js';
+import { formatCPF, validateCPF } from '../utils/cpf.js';
 import ConfirmDialog from './ConfirmDialog.js';
 
 interface SchedulesSectionProps {
@@ -27,6 +28,7 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
 
   // Form State
   const [patientName, setPatientName] = useState('');
+  const [patientCpf, setPatientCpf] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [tripType, setTripType] = useState<'ida_e_volta' | 'apenas_ida' | 'apenas_retorno'>('ida_e_volta');
@@ -161,6 +163,7 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
 
   const handleFormReset = () => {
     setPatientName('');
+    setPatientCpf('');
     setStartDate('');
     setEndDate('');
     setTripType('ida_e_volta');
@@ -187,14 +190,21 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
     setError(null);
     setSuccess(null);
 
-    if (!patientName.trim() || !startDate || !vehicleId || !selectedHospitalId || !requestType) {
-      setError('Por favor, preencha todos os campos obrigatórios do agendamento.');
+    if (!patientName.trim() || !patientCpf.trim() || !startDate || !vehicleId || !selectedHospitalId || !requestType) {
+      setError('Por favor, preencha todos os campos obrigatórios do agendamento (incluindo o CPF do paciente).');
+      return;
+    }
+
+    const cleanCpf = patientCpf.replace(/\D/g, '');
+    if (!validateCPF(cleanCpf)) {
+      setError('O CPF informado para o paciente é inválido. Por favor, digite um CPF válido com 11 dígitos.');
       return;
     }
 
     try {
       const payload = {
         patientName: patientName.trim(),
+        patientCpf: formatCPF(cleanCpf),
         startDate,
         endDate: startDate,
         tripType,
@@ -241,6 +251,7 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
     const hosp = hospitals.find(h => h.id === s.hospitalId);
     setEditingScheduleId(s.id);
     setPatientName(s.patientName);
+    setPatientCpf(s.patientCpf || '');
     setStartDate(s.startDate);
     setEndDate(s.endDate);
     setTripType(s.tripType || (s.startDate === s.endDate ? 'ida_e_volta' : 'ida_e_volta'));
@@ -473,13 +484,16 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
     }
     if (filterSearchTerm.trim()) {
       const q = normalizeText(filterSearchTerm);
+      const qDigits = filterSearchTerm.replace(/\D/g, '');
       const patient = normalizeText(s.patientName || '');
+      const patientCpfNorm = normalizeText(s.patientCpf || '');
+      const patientCpfDigits = (s.patientCpf || '').replace(/\D/g, '');
       const hosp = normalizeText(getHospitalName(s.hospitalId));
       const veh = normalizeText(getVehicleName(s.vehicleId));
       const retVeh = normalizeText(getVehicleName(s.returnVehicleId || ''));
       const driver = normalizeText(getDriverName(s.driverId || ''));
       const retDriver = normalizeText(getDriverName(s.returnDriverId || ''));
-      const matchesText = patient.includes(q) || hosp.includes(q) || veh.includes(q) || retVeh.includes(q) || driver.includes(q) || retDriver.includes(q);
+      const matchesText = patient.includes(q) || patientCpfNorm.includes(q) || (qDigits && patientCpfDigits.includes(qDigits)) || hosp.includes(q) || veh.includes(q) || retVeh.includes(q) || driver.includes(q) || retDriver.includes(q);
       if (!matchesText) return false;
     }
     return true;
@@ -502,10 +516,13 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
     }
     if (filterSearchTerm.trim()) {
       const q = normalizeText(filterSearchTerm);
+      const qDigits = filterSearchTerm.replace(/\D/g, '');
       const patient = normalizeText(h.patientName || '');
+      const patientCpfNorm = normalizeText(h.patientCpf || '');
+      const patientCpfDigits = (h.patientCpf || '').replace(/\D/g, '');
       const hosp = normalizeText(h.hospitalName || '');
       const veh = normalizeText(h.vehicleDetails || '');
-      const matchesText = patient.includes(q) || hosp.includes(q) || veh.includes(q);
+      const matchesText = patient.includes(q) || patientCpfNorm.includes(q) || (qDigits && patientCpfDigits.includes(qDigits)) || hosp.includes(q) || veh.includes(q);
       if (!matchesText) return false;
     }
     return true;
@@ -591,24 +608,52 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 
-                {/* Patient name */}
-                <div>
-                  <label htmlFor="sched-patient" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Nome Completo do Paciente (Obrigatório)
-                  </label>
-                  <div className="relative rounded-md shadow-sm">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <User className="h-4 w-4 text-slate-400" />
+                {/* Patient name & CPF */}
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="sched-patient" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                      Nome Completo do Paciente (Obrigatório)
+                    </label>
+                    <div className="relative rounded-md shadow-sm">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <User className="h-4 w-4 text-slate-400" />
+                      </div>
+                      <input
+                        id="sched-patient"
+                        type="text"
+                        required
+                        placeholder="Ex: Maria das Neves Pinheiro"
+                        value={patientName}
+                        onChange={(e) => setPatientName(e.target.value)}
+                        className="block w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium"
+                      />
                     </div>
-                    <input
-                      id="sched-patient"
-                      type="text"
-                      required
-                      placeholder="Ex: Maria das Neves Pinheiro"
-                      value={patientName}
-                      onChange={(e) => setPatientName(e.target.value)}
-                      className="block w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="sched-patient-cpf" className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                      <span>CPF do Paciente (Obrigatório)</span>
+                      {patientCpf.replace(/\D/g, '').length === 11 && (
+                        <span className={`text-[10px] font-bold ${validateCPF(patientCpf) ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {validateCPF(patientCpf) ? '✓ CPF Válido' : '✗ CPF Inválido'}
+                        </span>
+                      )}
+                    </label>
+                    <div className="relative rounded-md shadow-sm">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <FileText className="h-4 w-4 text-slate-400" />
+                      </div>
+                      <input
+                        id="sched-patient-cpf"
+                        type="text"
+                        required
+                        maxLength={14}
+                        placeholder="000.000.000-00"
+                        value={patientCpf}
+                        onChange={(e) => setPatientCpf(formatCPF(e.target.value))}
+                        className="block w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-mono font-medium"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1386,7 +1431,14 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                                 </span>
                               )}
                             </div>
-                            <h4 className="font-extrabold text-slate-950 text-base">{s.patientName}</h4>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-extrabold text-slate-950 text-base">{s.patientName}</h4>
+                              {s.patientCpf && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                  CPF: {s.patientCpf}
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-6 text-xs text-slate-600">
@@ -1638,7 +1690,14 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                         </div>
                       </div>
                       
-                      <h4 className="font-extrabold text-slate-800 text-base mb-2.5">{h.patientName}</h4>
+                      <div className="flex items-center gap-2 flex-wrap mb-2.5">
+                        <h4 className="font-extrabold text-slate-800 text-base">{h.patientName}</h4>
+                        {h.patientCpf && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-200 text-slate-700 border border-slate-300">
+                            CPF: {h.patientCpf}
+                          </span>
+                        )}
+                      </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-600">
                         <p>Ida/Volta: <strong className="text-slate-800">{h.startDate.split('-').reverse().join('/')} até {h.endDate.split('-').reverse().join('/')}</strong></p>
