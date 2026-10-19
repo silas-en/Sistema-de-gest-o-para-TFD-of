@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Car, Fuel, Tag, Settings2, Users2, AlertCircle, Sparkles, CheckCircle2, Trash2 } from 'lucide-react';
+import { Car, Fuel, Tag, Settings2, Users2, AlertCircle, Sparkles, CheckCircle2, Trash2, Pencil, X } from 'lucide-react';
 import { Vehicle, VehicleType, UserProfile, VehicleChecklist } from '../types.js';
 import { getOilMaintenanceStatus } from '../utils/oilChange.js';
 import ConfirmDialog from './ConfirmDialog.js';
@@ -41,9 +41,73 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
   const [maxPassengers, setMaxPassengers] = useState(4);
   const [vagasAcamados, setVagasAcamados] = useState(1);
   const [limiteKmTrocaOleo, setLimiteKmTrocaOleo] = useState(1000);
-  const [ultimoKmTrocaOleo, setUltimoKmTrocaOleo] = useState(0);
+  const [ultimoKmTrocaOleo, setUltimoKmTrocaOleo] = useState<number | string>(0);
+
+  // Edit Vehicle Modal State
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [editType, setEditType] = useState<VehicleType>('Carro de pequeno porte');
+  const [editPlate, setEditPlate] = useState('');
+  const [editModel, setEditModel] = useState('');
+  const [editBrand, setEditBrand] = useState('');
+  const [editMaxPassengers, setEditMaxPassengers] = useState(4);
+  const [editVagasAcamados, setEditVagasAcamados] = useState(1);
+  const [editLimiteKmTrocaOleo, setEditLimiteKmTrocaOleo] = useState(1000);
+  const [editUltimoKmTrocaOleo, setEditUltimoKmTrocaOleo] = useState<number | string>(0);
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
   const isAuthorized = userProfile === 'Administrador' || userProfile === 'Coordenador';
+
+  const handleOpenEdit = (v: Vehicle) => {
+    setEditingVehicle(v);
+    setEditType(v.type);
+    setEditPlate(v.plate);
+    setEditModel(v.model);
+    setEditBrand(v.brand);
+    setEditMaxPassengers(v.maxPassengers);
+    setEditVagasAcamados(v.vagasAcamados || 1);
+    setEditLimiteKmTrocaOleo(v.limiteKmTrocaOleo || 1000);
+    setEditUltimoKmTrocaOleo(v.ultimoKmTrocaOleo ?? 0);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingVehicle) return;
+    setIsSubmittingEdit(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await fetch(`/api/vehicles/${editingVehicle.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUserId
+        },
+        body: JSON.stringify({
+          type: editType,
+          plate: editPlate.toUpperCase().trim(),
+          model: editModel.trim(),
+          brand: editBrand.trim(),
+          maxPassengers: Number(editMaxPassengers),
+          vagasAcamados: editType === 'Ambulância' ? (Number(editVagasAcamados) || 1) : undefined,
+          limiteKmTrocaOleo: Number(editLimiteKmTrocaOleo) || 1000,
+          ultimoKmTrocaOleo: editUltimoKmTrocaOleo === '' ? 0 : Number(editUltimoKmTrocaOleo)
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Erro ao atualizar veículo');
+      }
+
+      setSuccess(`Veículo ${editPlate.toUpperCase()} atualizado com sucesso!`);
+      setEditingVehicle(null);
+      fetchVehicles();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
 
   const fetchVehicles = async () => {
     try {
@@ -104,7 +168,7 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
           maxPassengers,
           vagasAcamados: type === 'Ambulância' ? vagasAcamados : undefined,
           limiteKmTrocaOleo: Number(limiteKmTrocaOleo) || 1000,
-          ultimoKmTrocaOleo: Number(ultimoKmTrocaOleo) || 0
+          ultimoKmTrocaOleo: ultimoKmTrocaOleo === '' ? 0 : Number(ultimoKmTrocaOleo)
         })
       });
 
@@ -378,7 +442,7 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
                     type="number"
                     min={0}
                     value={ultimoKmTrocaOleo}
-                    onChange={(e) => setUltimoKmTrocaOleo(Number(e.target.value))}
+                    onChange={(e) => setUltimoKmTrocaOleo(e.target.value === '' ? '' : Number(e.target.value))}
                     className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     placeholder="0"
                   />
@@ -429,19 +493,30 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
                         <h4 className="font-bold text-slate-950 text-base mt-1.5">{v.brand} {v.model}</h4>
                       </div>
                       
-                      {/* Stylized license plate */}
+                      {/* Stylized license plate and actions */}
                       <div className="flex flex-col items-end space-y-2">
                         <span className="font-mono text-xs font-extrabold tracking-widest bg-slate-100 px-2.5 py-1 rounded border border-slate-300 text-slate-800 shadow-sm select-all">
                           {v.plate}
                         </span>
-                        {userProfile === 'Administrador' && (
-                          <button
-                            onClick={() => handleDelete(v.id)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors inline-flex items-center"
-                            title="Excluir Veículo"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                        {isAuthorized && (
+                          <div className="flex items-center space-x-1">
+                            <button
+                              onClick={() => handleOpenEdit(v)}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center cursor-pointer"
+                              title="Editar Veículo"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            {userProfile === 'Administrador' && (
+                              <button
+                                onClick={() => handleDelete(v.id)}
+                                className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors inline-flex items-center cursor-pointer"
+                                title="Excluir Veículo"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -459,8 +534,11 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
                       )}
                       {(() => {
                         const oilStatus = getOilMaintenanceStatus(v, checklists);
+                        const initialKm = Number(v.ultimoKmTrocaOleo) || 0;
+                        const nextExpectedKm = initialKm + oilStatus.limitKm;
+
                         return (
-                          <div className={`p-3 rounded-xl border space-y-2 text-xs transition-all ${
+                          <div className={`p-3 rounded-xl border space-y-2.5 text-xs transition-all ${
                             oilStatus.isOverdue
                               ? 'bg-amber-100/90 border-amber-300 ring-2 ring-amber-400'
                               : 'bg-amber-50/80 border-amber-200'
@@ -474,13 +552,29 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
                               </span>
                             </div>
 
-                            <div>
-                              <div className="flex justify-between items-center text-[11px] text-slate-700 font-semibold mb-1">
+                            {/* Informações detalhadas da quilometragem inicial e próxima */}
+                            <div className="space-y-1.5 bg-white/80 p-2.5 rounded-xl border border-amber-200/70">
+                              <div className="flex justify-between items-center text-[11px] text-slate-700">
+                                <span className="font-medium">KM da Última Troca (Ponto Inicial):</span>
+                                <span className="font-mono font-bold text-slate-900 bg-amber-100/70 px-2 py-0.5 rounded border border-amber-200">
+                                  {initialKm} KM
+                                </span>
+                              </div>
+
+                              <div className="flex justify-between items-center text-[11px] text-slate-700">
+                                <span className="font-medium">Próxima Troca Prevista aos:</span>
+                                <span className="font-mono font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                  {nextExpectedKm} KM
+                                </span>
+                              </div>
+
+                              <div className="flex justify-between items-center text-[11px] text-slate-700 font-semibold pt-1 border-t border-slate-100">
                                 <span>Acumulado desde a última troca:</span>
                                 <span className={`font-mono font-bold ${oilStatus.isOverdue ? 'text-amber-950 font-black' : 'text-slate-900'}`}>
                                   {oilStatus.kmDriven} / {oilStatus.limitKm} KM
                                 </span>
                               </div>
+
                               <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                                 <div
                                   className={`h-full transition-all duration-300 ${
@@ -497,7 +591,7 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
 
                             {oilStatus.lastChangeDate && (
                               <p className="text-[10px] text-slate-600 font-medium">
-                                📅 Última troca realizada em: <strong>{oilStatus.lastChangeDate}</strong>
+                                📅 Data de referência da troca: <strong>{oilStatus.lastChangeDate}</strong>
                               </p>
                             )}
 
@@ -528,6 +622,184 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
         </div>
 
       </div>
+
+      {/* Edit Vehicle Modal */}
+      {editingVehicle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-slate-200">
+            <div className="flex items-center justify-between p-5 border-b border-slate-150">
+              <div className="flex items-center space-x-2">
+                <Car className="h-5 w-5 text-blue-600" />
+                <h3 className="font-extrabold text-slate-900 text-base">
+                  Editar Veículo: {editingVehicle.brand} {editingVehicle.model} ({editingVehicle.plate})
+                </h3>
+              </div>
+              <button
+                onClick={() => setEditingVehicle(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Tipo de Veículo
+                </label>
+                <select
+                  value={editType}
+                  onChange={(e) => {
+                    const newT = e.target.value as VehicleType;
+                    setEditType(newT);
+                    if (newT === 'Carro de pequeno porte') setEditMaxPassengers(4);
+                    else if (newT === 'Carro de grande porte') setEditMaxPassengers(15);
+                    else if (newT === 'Ambulância') {
+                      setEditMaxPassengers(2);
+                      setEditVagasAcamados(1);
+                    }
+                  }}
+                  className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="Carro de pequeno porte">Carro de pequeno porte (Passeio / Spin)</option>
+                  <option value="Carro de grande porte">Carro de grande porte (Van / Micro-ônibus)</option>
+                  <option value="Ambulância">Ambulância (Com macas e suporte)</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Placa do Veículo
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editPlate}
+                    onChange={(e) => setEditPlate(e.target.value)}
+                    className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 font-mono font-bold text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Capacidade Geral
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={60}
+                    value={editMaxPassengers}
+                    onChange={(e) => setEditMaxPassengers(Number(e.target.value))}
+                    className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Marca / Fabricante
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editBrand}
+                    onChange={(e) => setEditBrand(e.target.value)}
+                    className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Modelo
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editModel}
+                    onChange={(e) => setEditModel(e.target.value)}
+                    className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {editType === 'Ambulância' && (
+                <div className="bg-rose-50/70 p-3 rounded-xl border border-rose-200">
+                  <label className="block text-xs font-bold text-rose-900 uppercase tracking-wider mb-1">
+                    🛏️ Vagas para Acamados (Macas/Leitos)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={10}
+                    value={editVagasAcamados}
+                    onChange={(e) => setEditVagasAcamados(Number(e.target.value))}
+                    className="block w-full px-3.5 py-2 bg-white border border-rose-300 rounded-xl text-slate-950 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+              )}
+
+              {/* Limite de Quilometragem para Troca de Óleo e Filtro */}
+              <div className="bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200 space-y-1.5">
+                <label className="block text-xs font-extrabold text-amber-900 uppercase tracking-wider">
+                  🛢️ Limite de KM para Troca de Óleo e Filtro
+                </label>
+                <p className="text-[10px] text-amber-800 font-medium">
+                  Intervalo em KM após o qual o sistema acende o alerta de manutenção.
+                </p>
+                <input
+                  type="number"
+                  required
+                  min={100}
+                  step={100}
+                  value={editLimiteKmTrocaOleo}
+                  onChange={(e) => setEditLimiteKmTrocaOleo(Number(e.target.value))}
+                  className="block w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl text-slate-950 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              {/* KM da Última Troca de Óleo (Ponto Inicial) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  KM da Última Troca de Óleo (Ponto Inicial)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={editUltimoKmTrocaOleo}
+                  onChange={(e) => setEditUltimoKmTrocaOleo(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="block w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="0"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Defina o odômetro de referência em que a última troca de óleo e filtro foi executada.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-150">
+                <button
+                  type="button"
+                  onClick={() => setEditingVehicle(null)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingEdit}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmittingEdit ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <ConfirmDialog
         isOpen={confirmConfig.isOpen}
         title={confirmConfig.title}

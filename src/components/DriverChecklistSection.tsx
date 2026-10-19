@@ -891,6 +891,11 @@ export default function DriverChecklistSection({ currentUser, onLogout }: Driver
                       <span className="flex items-center gap-1.5">
                         <Wrench className="h-3.5 w-3.5 text-slate-500" />
                         Status da Troca de Óleo: {kmDrivenSinceLastOil} / {selectedLimitKm} KM
+                        {oilStatus.initialOilKm > 0 && (
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            (Ponto Inicial: {oilStatus.initialOilKm} KM)
+                          </span>
+                        )}
                       </span>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                         isOilAlertTriggered ? 'bg-rose-600 text-white' : 'bg-emerald-100 text-emerald-800'

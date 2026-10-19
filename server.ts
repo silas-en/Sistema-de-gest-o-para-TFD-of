@@ -259,13 +259,14 @@ async function startServer() {
     const newVehicle: Vehicle = {
       id: 'vehicle-' + Math.random().toString(36).substr(2, 9),
       type,
-      plate,
-      model,
-      brand,
+      plate: plate.toUpperCase().trim(),
+      model: model.trim(),
+      brand: brand.trim(),
       maxPassengers: Number(maxPassengers),
       vagasAcamados: type === 'Ambulância' ? (Number(vagasAcamados) || 1) : undefined,
       limiteKmTrocaOleo: limiteKmTrocaOleo !== undefined && limiteKmTrocaOleo !== '' ? Number(limiteKmTrocaOleo) : 1000,
-      ultimoKmTrocaOleo: ultimoKmTrocaOleo !== undefined && ultimoKmTrocaOleo !== '' ? Number(ultimoKmTrocaOleo) : 0
+      ultimoKmTrocaOleo: ultimoKmTrocaOleo !== undefined && ultimoKmTrocaOleo !== '' ? Number(ultimoKmTrocaOleo) : 0,
+      dataUltimaTrocaOleo: new Date().toISOString()
     };
 
     DatabaseManager.saveVehicle(newVehicle);
@@ -288,16 +289,20 @@ async function startServer() {
 
     const { type, plate, model, brand, maxPassengers, vagasAcamados, limiteKmTrocaOleo, ultimoKmTrocaOleo } = req.body;
 
+    const parsedUltimoKm = ultimoKmTrocaOleo !== undefined && ultimoKmTrocaOleo !== '' ? Number(ultimoKmTrocaOleo) : existing.ultimoKmTrocaOleo;
+    const kmChanged = parsedUltimoKm !== existing.ultimoKmTrocaOleo;
+
     const updatedVehicle: Vehicle = {
       ...existing,
       type: type || existing.type,
-      plate: plate || existing.plate,
-      model: model || existing.model,
-      brand: brand || existing.brand,
+      plate: plate ? plate.toUpperCase().trim() : existing.plate,
+      model: model ? model.trim() : existing.model,
+      brand: brand ? brand.trim() : existing.brand,
       maxPassengers: maxPassengers !== undefined ? Number(maxPassengers) : existing.maxPassengers,
       vagasAcamados: (type || existing.type) === 'Ambulância' ? (vagasAcamados !== undefined ? Number(vagasAcamados) : (existing.vagasAcamados || 1)) : undefined,
       limiteKmTrocaOleo: limiteKmTrocaOleo !== undefined && limiteKmTrocaOleo !== '' ? Number(limiteKmTrocaOleo) : existing.limiteKmTrocaOleo,
-      ultimoKmTrocaOleo: ultimoKmTrocaOleo !== undefined && ultimoKmTrocaOleo !== '' ? Number(ultimoKmTrocaOleo) : existing.ultimoKmTrocaOleo
+      ultimoKmTrocaOleo: parsedUltimoKm,
+      dataUltimaTrocaOleo: kmChanged ? new Date().toISOString() : (existing.dataUltimaTrocaOleo || new Date().toISOString())
     };
 
     DatabaseManager.saveVehicle(updatedVehicle);

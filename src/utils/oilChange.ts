@@ -9,7 +9,7 @@ export function getKmDrivenSinceLastOil(vehicle: Vehicle, checklists: VehicleChe
 
   const vehChecklists = checklists.filter(c => 
     (c.vehicleId && c.vehicleId === vehicle.id) || 
-    (c.vehicleModelPlate && vehicle.plate && c.vehicleModelPlate.includes(vehicle.plate))
+    (!c.vehicleId && c.vehicleModelPlate && vehicle.plate && c.vehicleModelPlate.toUpperCase().includes(vehicle.plate.toUpperCase()))
   );
 
   if (vehicle.dataUltimaTrocaOleo) {
@@ -59,12 +59,16 @@ export function getOilMaintenanceStatus(
   currentTripKm: number = 0
 ) {
   const limitKm = Number(vehicle?.limiteKmTrocaOleo) || 1000;
+  const initialOilKm = Number(vehicle?.ultimoKmTrocaOleo) || 0;
   const kmDriven = getKmDrivenSinceLastOil(vehicle, checklists);
   const totalKmWithTrip = kmDriven + Math.max(0, Number(currentTripKm) || 0);
   const isOverdue = limitKm > 0 && totalKmWithTrip >= limitKm;
   const percentage = limitKm > 0 ? Math.min(100, Math.round((totalKmWithTrip / limitKm) * 100)) : 0;
+  const nextChangeExpectedKm = initialOilKm + limitKm;
 
   return {
+    initialOilKm,
+    nextChangeExpectedKm,
     kmDriven,
     limitKm,
     totalKmWithTrip,

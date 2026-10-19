@@ -253,6 +253,7 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
                     <p className="text-xs font-black text-white">{v.brand} {v.model} ({v.plate})</p>
                     <p className="text-[11px] text-yellow-100 mt-1">
                       Rodou <strong>{status.kmDriven} KM</strong> desde a última troca (Limite: <strong>{status.limitKm} KM</strong>)
+                      {status.initialOilKm > 0 && <span> • Ponto Inicial: <strong>{status.initialOilKm} KM</strong></span>}
                     </p>
                   </div>
                   {canManageOil ? (

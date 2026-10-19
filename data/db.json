@@ -1,0 +1,23 @@
+{
+  "users": [
+    {
+      "id": "admin-bootstrap-id",
+      "username": "admin",
+      "password": "87304508",
+      "name": "Administrador Padrão",
+      "profile": "Administrador",
+      "status": "aprovado",
+      "createdAt": "2026-10-19T09:49:20.220Z"
+    }
+  ],
+  "vehicles": [],
+  "drivers": [],
+  "hospitals": [],
+  "schedules": [],
+  "history": [],
+  "settings": {
+    "backupFolder": "backups",
+    "lastBackupDate": ""
+  },
+  "checklists": []
+}
