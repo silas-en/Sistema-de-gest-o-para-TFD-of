@@ -92,6 +92,9 @@ export interface HistoryLog {
   createdByUserName: string;
   completedAt: string;
   completedByUserName: string;
+  confirmationStatus?: ConfirmationStatus;
+  confirmationUpdatedBy?: string;
+  confirmationUpdatedAt?: string;
 }
 
 export interface SystemSettings {

@@ -493,7 +493,10 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
       const retVeh = normalizeText(getVehicleName(s.returnVehicleId || ''));
       const driver = normalizeText(getDriverName(s.driverId || ''));
       const retDriver = normalizeText(getDriverName(s.returnDriverId || ''));
-      const matchesText = patient.includes(q) || patientCpfNorm.includes(q) || (qDigits && patientCpfDigits.includes(qDigits)) || hosp.includes(q) || veh.includes(q) || retVeh.includes(q) || driver.includes(q) || retDriver.includes(q);
+      const confStatus = s.confirmationStatus === 'confirmado' ? 'confirmado confirmada' :
+                         s.confirmationStatus === 'sem_contato' ? 'sem contato nao confirmada' :
+                         s.confirmationStatus === 'desistencia' ? 'desistiu desistencia nao confirmada' : 'pendente';
+      const matchesText = patient.includes(q) || patientCpfNorm.includes(q) || (qDigits && patientCpfDigits.includes(qDigits)) || hosp.includes(q) || veh.includes(q) || retVeh.includes(q) || driver.includes(q) || retDriver.includes(q) || confStatus.includes(q);
       if (!matchesText) return false;
     }
     return true;
@@ -522,7 +525,10 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
       const patientCpfDigits = (h.patientCpf || '').replace(/\D/g, '');
       const hosp = normalizeText(h.hospitalName || '');
       const veh = normalizeText(h.vehicleDetails || '');
-      const matchesText = patient.includes(q) || patientCpfNorm.includes(q) || (qDigits && patientCpfDigits.includes(qDigits)) || hosp.includes(q) || veh.includes(q);
+      const confStatus = h.confirmationStatus === 'confirmado' ? 'confirmado confirmada' :
+                         h.confirmationStatus === 'sem_contato' ? 'sem contato nao confirmada' :
+                         h.confirmationStatus === 'desistencia' ? 'desistiu desistencia nao confirmada' : 'pendente nao registrada';
+      const matchesText = patient.includes(q) || patientCpfNorm.includes(q) || (qDigits && patientCpfDigits.includes(qDigits)) || hosp.includes(q) || veh.includes(q) || confStatus.includes(q);
       if (!matchesText) return false;
     }
     return true;
@@ -1672,10 +1678,26 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                   <div key={h.id} className="bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-800 border border-slate-300">
-                          <ShieldCheck className="h-3 w-3 mr-1 text-blue-600" />
-                          Viagem Concluída & Auditada (Baixa Realizada)
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-800 border border-slate-300">
+                            <ShieldCheck className="h-3 w-3 mr-1 text-blue-600" />
+                            Viagem Concluída & Auditada
+                          </span>
+
+                          {/* Badge de Status de Confirmação da Viagem no Histórico */}
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            h.confirmationStatus === 'confirmado' ? 'bg-emerald-100 text-emerald-800 border border-emerald-250' :
+                            h.confirmationStatus === 'sem_contato' ? 'bg-amber-100 text-amber-800 border border-amber-250' :
+                            h.confirmationStatus === 'desistencia' ? 'bg-rose-100 text-rose-800 border border-rose-250' :
+                            'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}>
+                            {h.confirmationStatus === 'confirmado' ? '✓ Viagem Confirmada' :
+                             h.confirmationStatus === 'sem_contato' ? '⚠ Não Confirmada: Sem Contato' :
+                             h.confirmationStatus === 'desistencia' ? '✗ Não Confirmada: Desistiu' :
+                             '⌛ Confirmação Não Registrada / Pendente'}
+                          </span>
+                        </div>
+
                         <div className="flex items-center space-x-2">
                           <span className="text-[10px] font-mono text-slate-400">ID: {h.id}</span>
                           {currentUser.profile === 'Administrador' && (
@@ -1705,7 +1727,40 @@ export default function SchedulesSection({ currentUser, onOpenHospitals }: Sched
                         <p className="col-span-1 md:col-span-2">Hospital de Tratamento: <strong className="text-slate-800">{h.hospitalName}</strong></p>
                         <p>Tipo: <span className="font-medium">{h.requestType}</span></p>
                         <p>Criado originalmente por: <span className="font-medium text-slate-755">{h.createdByUserName}</span></p>
+
+                        {/* Bloco de Registro do Status de Confirmação no Histórico */}
+                        <div className="col-span-1 md:col-span-2 p-2.5 rounded-xl bg-white border border-slate-200/90 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 shadow-2xs mt-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Confirmação da viagem:</span>
+                            <span className={`font-extrabold ${
+                              h.confirmationStatus === 'confirmado' ? 'text-emerald-700' :
+                              h.confirmationStatus === 'sem_contato' ? 'text-amber-700' :
+                              h.confirmationStatus === 'desistencia' ? 'text-rose-700' : 'text-slate-600'
+                            }`}>
+                              {h.confirmationStatus === 'confirmado' ? '✓ Viagem confirmada pelo solicitante' :
+                               h.confirmationStatus === 'sem_contato' ? '⚠ Não confirmada (Sem contato com o solicitante)' :
+                               h.confirmationStatus === 'desistencia' ? '✗ Não confirmada (O solicitante desistiu da viagem)' :
+                               '⌛ Confirmação pendente / não informada'}
+                            </span>
+                          </div>
+                          {h.confirmationUpdatedBy && (
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              Registrado por: <strong className="text-slate-700">{h.confirmationUpdatedBy}</strong>
+                              {h.confirmationUpdatedAt && ` em ${new Date(h.confirmationUpdatedAt).toLocaleDateString('pt-BR')}`}
+                            </span>
+                          )}
+                        </div>
                       </div>
+                    </div>
+
+                    {/* Print-only confirmation indicator */}
+                    <div className="hidden print:block mt-2 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900">
+                      <strong>Status da Confirmação:</strong> {
+                        h.confirmationStatus === 'confirmado' ? 'CONFIRMADA pelo solicitante' :
+                        h.confirmationStatus === 'sem_contato' ? 'NÃO CONFIRMADA (Sem contato com o solicitante)' :
+                        h.confirmationStatus === 'desistencia' ? 'NÃO CONFIRMADA (O solicitante desistiu da viagem)' :
+                        'CONFIRMAÇÃO NÃO REGISTRADA'
+                      } {h.confirmationUpdatedBy ? `(Registrado por: ${h.confirmationUpdatedBy}${h.confirmationUpdatedAt ? ` em ${new Date(h.confirmationUpdatedAt).toLocaleDateString('pt-BR')}` : ''})` : ''}
                     </div>
 
                     <div className="mt-4 pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between text-[10px] text-slate-400 font-mono">

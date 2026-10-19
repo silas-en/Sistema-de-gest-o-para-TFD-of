@@ -282,6 +282,9 @@ export class DatabaseManager {
                 completed_by_user_name VARCHAR(255) NOT NULL
               );
               ALTER TABLE tfd_history_logs ADD COLUMN IF NOT EXISTS patient_cpf VARCHAR(50);
+              ALTER TABLE tfd_history_logs ADD COLUMN IF NOT EXISTS confirmation_status VARCHAR(50);
+              ALTER TABLE tfd_history_logs ADD COLUMN IF NOT EXISTS confirmation_updated_by VARCHAR(255);
+              ALTER TABLE tfd_history_logs ADD COLUMN IF NOT EXISTS confirmation_updated_at VARCHAR(255);
             `);
             await dbPool.query(`
               CREATE TABLE IF NOT EXISTS tfd_settings (
@@ -434,8 +437,8 @@ export class DatabaseManager {
               }
               for (const log of dbState.history) {
                 await dbPool.query(
-                  `INSERT INTO tfd_history_logs (id, patient_name, patient_cpf, start_date, end_date, vehicle_details, hospital_name, request_type, created_by_user_name, completed_at, completed_by_user_name)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT DO NOTHING`,
+                  `INSERT INTO tfd_history_logs (id, patient_name, patient_cpf, start_date, end_date, vehicle_details, hospital_name, request_type, created_by_user_name, completed_at, completed_by_user_name, confirmation_status, confirmation_updated_by, confirmation_updated_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) ON CONFLICT DO NOTHING`,
                   [
                     log.id,
                     log.patientName,
@@ -447,7 +450,10 @@ export class DatabaseManager {
                     log.requestType,
                     log.createdByUserName,
                     log.completedAt,
-                    log.completedByUserName
+                    log.completedByUserName,
+                    log.confirmationStatus || null,
+                    log.confirmationUpdatedBy || null,
+                    log.confirmationUpdatedAt || null
                   ]
                 );
               }
@@ -559,7 +565,10 @@ export class DatabaseManager {
                 requestType: r.request_type,
                 createdByUserName: r.created_by_user_name,
                 completedAt: r.completed_at,
-                completedByUserName: r.completed_by_user_name
+                completedByUserName: r.completed_by_user_name,
+                confirmationStatus: r.confirmation_status || undefined,
+                confirmationUpdatedBy: r.confirmation_updated_by || undefined,
+                confirmationUpdatedAt: r.confirmation_updated_at || undefined
               }));
 
               // Load settings
@@ -996,8 +1005,8 @@ export class DatabaseManager {
 
     if (pool) {
       pool.query(
-        `INSERT INTO tfd_history_logs (id, patient_name, patient_cpf, start_date, end_date, vehicle_details, hospital_name, request_type, created_by_user_name, completed_at, completed_by_user_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `INSERT INTO tfd_history_logs (id, patient_name, patient_cpf, start_date, end_date, vehicle_details, hospital_name, request_type, created_by_user_name, completed_at, completed_by_user_name, confirmation_status, confirmation_updated_by, confirmation_updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ON CONFLICT (id) DO UPDATE SET
            patient_name = EXCLUDED.patient_name,
            patient_cpf = EXCLUDED.patient_cpf,
@@ -1008,7 +1017,10 @@ export class DatabaseManager {
            request_type = EXCLUDED.request_type,
            created_by_user_name = EXCLUDED.created_by_user_name,
            completed_at = EXCLUDED.completed_at,
-           completed_by_user_name = EXCLUDED.completed_by_user_name`,
+           completed_by_user_name = EXCLUDED.completed_by_user_name,
+           confirmation_status = EXCLUDED.confirmation_status,
+           confirmation_updated_by = EXCLUDED.confirmation_updated_by,
+           confirmation_updated_at = EXCLUDED.confirmation_updated_at`,
         [
           log.id,
           log.patientName,
@@ -1020,7 +1032,10 @@ export class DatabaseManager {
           log.requestType,
           log.createdByUserName,
           log.completedAt,
-          log.completedByUserName
+          log.completedByUserName,
+          log.confirmationStatus || null,
+          log.confirmationUpdatedBy || null,
+          log.confirmationUpdatedAt || null
         ]
       ).catch(e => console.error('PostgreSQL saveHistory failed:', e));
     } else {

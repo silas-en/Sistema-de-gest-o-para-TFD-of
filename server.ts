@@ -634,7 +634,10 @@ async function startServer() {
           requestType: sched.recurrentTypeDetails ? `${sched.requestType} (${sched.recurrentTypeDetails})` : sched.requestType,
           createdByUserName: sched.createdByUserName,
           completedAt: new Date().toISOString(),
-          completedByUserName: 'Sistema (Automático)'
+          completedByUserName: 'Sistema (Automático)',
+          confirmationStatus: sched.confirmationStatus || 'pendente',
+          confirmationUpdatedBy: sched.confirmationUpdatedBy,
+          confirmationUpdatedAt: sched.confirmationUpdatedAt
         };
 
         DatabaseManager.saveHistory(historyItem);
@@ -674,7 +677,10 @@ async function startServer() {
             requestType: sched.recurrentTypeDetails ? `${sched.requestType} (${sched.recurrentTypeDetails}) (EXCLUÍDO)` : `${sched.requestType} (EXCLUÍDO)`,
             createdByUserName: sched.createdByUserName,
             completedAt: new Date().toISOString(),
-            completedByUserName: `Excluído por Administrador: ${adminName}`
+            completedByUserName: `Excluído por Administrador: ${adminName}`,
+            confirmationStatus: sched.confirmationStatus || 'pendente',
+            confirmationUpdatedBy: sched.confirmationUpdatedBy,
+            confirmationUpdatedAt: sched.confirmationUpdatedAt
           };
 
           DatabaseManager.saveHistory(historyItem);
@@ -1015,7 +1021,10 @@ async function startServer() {
       requestType: sched.recurrentTypeDetails ? `${sched.requestType} (${sched.recurrentTypeDetails})` : sched.requestType,
       createdByUserName: sched.createdByUserName,
       completedAt: new Date().toISOString(),
-      completedByUserName: user.name
+      completedByUserName: user.name,
+      confirmationStatus: sched.confirmationStatus || 'pendente',
+      confirmationUpdatedBy: sched.confirmationUpdatedBy,
+      confirmationUpdatedAt: sched.confirmationUpdatedAt
     };
 
     // Remove from active schedules
@@ -1355,6 +1364,7 @@ async function startServer() {
       const historyItem: HistoryLog = {
         id: 'history-del-' + Math.random().toString(36).substr(2, 9),
         patientName: sched.patientName,
+        patientCpf: sched.patientCpf,
         startDate: sched.startDate,
         endDate: sched.endDate,
         vehicleDetails,
@@ -1362,7 +1372,10 @@ async function startServer() {
         requestType: sched.recurrentTypeDetails ? `${sched.requestType} (${sched.recurrentTypeDetails}) (EXCLUÍDO)` : `${sched.requestType} (EXCLUÍDO)`,
         createdByUserName: sched.createdByUserName,
         completedAt: new Date().toISOString(),
-        completedByUserName: `Excluído por Administrador: ${user.name}`
+        completedByUserName: `Excluído por Administrador: ${user.name}`,
+        confirmationStatus: sched.confirmationStatus || 'pendente',
+        confirmationUpdatedBy: sched.confirmationUpdatedBy,
+        confirmationUpdatedAt: sched.confirmationUpdatedAt
       };
 
       DatabaseManager.saveHistory(historyItem);
