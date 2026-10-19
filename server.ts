@@ -266,7 +266,8 @@ async function startServer() {
       vagasAcamados: type === 'Ambulância' ? (Number(vagasAcamados) || 1) : undefined,
       limiteKmTrocaOleo: limiteKmTrocaOleo !== undefined && limiteKmTrocaOleo !== '' ? Number(limiteKmTrocaOleo) : 1000,
       ultimoKmTrocaOleo: ultimoKmTrocaOleo !== undefined && ultimoKmTrocaOleo !== '' ? Number(ultimoKmTrocaOleo) : 0,
-      dataUltimaTrocaOleo: new Date().toISOString()
+      dataUltimaTrocaOleo: new Date().toISOString(),
+      registradoPorTrocaOleo: user?.fullName || undefined
     };
 
     DatabaseManager.saveVehicle(newVehicle);
@@ -302,7 +303,8 @@ async function startServer() {
       vagasAcamados: (type || existing.type) === 'Ambulância' ? (vagasAcamados !== undefined ? Number(vagasAcamados) : (existing.vagasAcamados || 1)) : undefined,
       limiteKmTrocaOleo: limiteKmTrocaOleo !== undefined && limiteKmTrocaOleo !== '' ? Number(limiteKmTrocaOleo) : existing.limiteKmTrocaOleo,
       ultimoKmTrocaOleo: parsedUltimoKm,
-      dataUltimaTrocaOleo: kmChanged ? new Date().toISOString() : (existing.dataUltimaTrocaOleo || new Date().toISOString())
+      dataUltimaTrocaOleo: kmChanged ? new Date().toISOString() : (existing.dataUltimaTrocaOleo || new Date().toISOString()),
+      registradoPorTrocaOleo: kmChanged ? (user?.fullName || existing.registradoPorTrocaOleo) : existing.registradoPorTrocaOleo
     };
 
     DatabaseManager.saveVehicle(updatedVehicle);
@@ -330,6 +332,7 @@ async function startServer() {
 
     existing.dataUltimaTrocaOleo = req.body.date || new Date().toISOString();
     existing.ultimoKmTrocaOleo = newOilChangeKm;
+    existing.registradoPorTrocaOleo = user.fullName;
     DatabaseManager.saveVehicle(existing);
     res.json({ message: 'Troca de óleo e filtro registrada com sucesso!', vehicle: existing });
   });

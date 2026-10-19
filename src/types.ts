@@ -29,6 +29,7 @@ export interface Vehicle {
   limiteKmTrocaOleo?: number;
   ultimoKmTrocaOleo?: number;
   dataUltimaTrocaOleo?: string;
+  registradoPorTrocaOleo?: string;
 }
 
 export interface Driver {

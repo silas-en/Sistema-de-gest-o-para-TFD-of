@@ -76,6 +76,7 @@ export function getOilMaintenanceStatus(
     percentage,
     lastChangeDate: vehicle?.dataUltimaTrocaOleo
       ? new Date(vehicle.dataUltimaTrocaOleo).toLocaleDateString('pt-BR')
-      : null
+      : null,
+    registeredBy: vehicle?.registradoPorTrocaOleo || null
   };
 }

@@ -94,7 +94,7 @@ export default function ChecklistsSection({ currentUserId, userProfile }: Checkl
     setConfirmConfig({
       isOpen: true,
       title: 'Registrar Troca de Óleo e Filtro',
-      message: `Confirma que a troca de óleo e filtro do veículo ${modelPlate} foi realizada? Isso redefinirá os alertas de manutenção.`,
+      message: `Confirma que a troca de óleo e filtro do veículo ${modelPlate} foi realizada hoje? O seu nome de coordenador/admin ficará registrado como responsável pela validação da troca.`,
       onConfirm: async () => {
         setConfirmConfig(prev => ({ ...prev, isOpen: false }));
         try {

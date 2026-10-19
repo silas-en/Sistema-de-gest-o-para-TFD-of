@@ -208,7 +208,7 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
     setConfirmConfig({
       isOpen: true,
       title: 'Registrar Troca de Óleo e Filtro',
-      message: `Deseja registrar que a troca de óleo e filtro do veículo ${modelPlate} foi realizada? Isso atualizará o KM de referência e reiniciará a contagem do alerta de manutenção.`,
+      message: `Deseja registrar que a troca de óleo e filtro do veículo ${modelPlate} foi realizada hoje? O seu nome de coordenador/administrador ficará relacionado no registro do veículo.`,
       type: 'info',
       onConfirm: async () => {
         setConfirmConfig(prev => ({ ...prev, isOpen: false }));
@@ -590,9 +590,16 @@ export default function VehiclesSection({ currentUserId, userProfile }: Vehicles
                             </div>
 
                             {oilStatus.lastChangeDate && (
-                              <p className="text-[10px] text-slate-600 font-medium">
-                                📅 Data de referência da troca: <strong>{oilStatus.lastChangeDate}</strong>
-                              </p>
+                              <div className="text-[11px] text-slate-700 font-medium bg-amber-100/60 p-2 rounded-xl border border-amber-200/80 flex flex-wrap items-center justify-between gap-1">
+                                <span>
+                                  📅 Última troca realizada em: <strong>{oilStatus.lastChangeDate}</strong>
+                                </span>
+                                {oilStatus.registeredBy && (
+                                  <span className="text-[10px] text-slate-600 font-semibold bg-white/80 px-2 py-0.5 rounded border border-amber-200">
+                                    reg.: <strong className="text-amber-950">{oilStatus.registeredBy}</strong>
+                                  </span>
+                                )}
+                              </div>
                             )}
 
                             {oilStatus.isOverdue && (

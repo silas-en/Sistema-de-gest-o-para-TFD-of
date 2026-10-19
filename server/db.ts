@@ -266,6 +266,7 @@ export class DatabaseManager {
               ALTER TABLE tfd_vehicles ADD COLUMN IF NOT EXISTS limite_km_troca_oleo INTEGER;
               ALTER TABLE tfd_vehicles ADD COLUMN IF NOT EXISTS ultimo_km_troca_oleo INTEGER;
               ALTER TABLE tfd_vehicles ADD COLUMN IF NOT EXISTS data_ultima_troca_oleo VARCHAR(255);
+              ALTER TABLE tfd_vehicles ADD COLUMN IF NOT EXISTS registrado_por_troca_oleo VARCHAR(255);
             `);
             await dbPool.query(`
               CREATE TABLE IF NOT EXISTS tfd_history_logs (
@@ -387,9 +388,9 @@ export class DatabaseManager {
               }
               for (const v of dbState.vehicles) {
                 await dbPool.query(
-                  `INSERT INTO tfd_vehicles (id, type, plate, model, brand, max_passengers, limite_km_troca_oleo, ultimo_km_troca_oleo, data_ultima_troca_oleo)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING`,
-                  [v.id, v.type, v.plate, v.model, v.brand, v.maxPassengers, v.limiteKmTrocaOleo || null, v.ultimoKmTrocaOleo ?? 0, v.dataUltimaTrocaOleo || null]
+                  `INSERT INTO tfd_vehicles (id, type, plate, model, brand, max_passengers, limite_km_troca_oleo, ultimo_km_troca_oleo, data_ultima_troca_oleo, registrado_por_troca_oleo)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING`,
+                  [v.id, v.type, v.plate, v.model, v.brand, v.maxPassengers, v.limiteKmTrocaOleo || null, v.ultimoKmTrocaOleo ?? 0, v.dataUltimaTrocaOleo || null, v.registradoPorTrocaOleo || null]
                 );
               }
               for (const d of dbState.drivers) {
@@ -492,6 +493,7 @@ export class DatabaseManager {
                 limiteKmTrocaOleo: r.limite_km_troca_oleo !== null && r.limite_km_troca_oleo !== undefined ? Number(r.limite_km_troca_oleo) : undefined,
                 ultimoKmTrocaOleo: r.ultimo_km_troca_oleo !== null && r.ultimo_km_troca_oleo !== undefined ? Number(r.ultimo_km_troca_oleo) : 0,
                 dataUltimaTrocaOleo: r.data_ultima_troca_oleo || undefined,
+                registradoPorTrocaOleo: r.registrado_por_troca_oleo || undefined,
               }));
 
               // Load drivers
@@ -763,8 +765,8 @@ export class DatabaseManager {
 
     if (pool) {
       pool.query(
-        `INSERT INTO tfd_vehicles (id, type, plate, model, brand, max_passengers, limite_km_troca_oleo, ultimo_km_troca_oleo, data_ultima_troca_oleo)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO tfd_vehicles (id, type, plate, model, brand, max_passengers, limite_km_troca_oleo, ultimo_km_troca_oleo, data_ultima_troca_oleo, registrado_por_troca_oleo)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (id) DO UPDATE SET
            type = EXCLUDED.type,
            plate = EXCLUDED.plate,
@@ -773,8 +775,9 @@ export class DatabaseManager {
            max_passengers = EXCLUDED.max_passengers,
            limite_km_troca_oleo = EXCLUDED.limite_km_troca_oleo,
            ultimo_km_troca_oleo = EXCLUDED.ultimo_km_troca_oleo,
-           data_ultima_troca_oleo = EXCLUDED.data_ultima_troca_oleo`,
-        [vehicle.id, vehicle.type, vehicle.plate, vehicle.model, vehicle.brand, vehicle.maxPassengers, vehicle.limiteKmTrocaOleo || null, vehicle.ultimoKmTrocaOleo ?? 0, vehicle.dataUltimaTrocaOleo || null]
+           data_ultima_troca_oleo = EXCLUDED.data_ultima_troca_oleo,
+           registrado_por_troca_oleo = EXCLUDED.registrado_por_troca_oleo`,
+        [vehicle.id, vehicle.type, vehicle.plate, vehicle.model, vehicle.brand, vehicle.maxPassengers, vehicle.limiteKmTrocaOleo || null, vehicle.ultimoKmTrocaOleo ?? 0, vehicle.dataUltimaTrocaOleo || null, vehicle.registradoPorTrocaOleo || null]
       ).catch(e => console.error('PostgreSQL saveVehicle failed:', e));
     } else {
       this.syncToFile();
